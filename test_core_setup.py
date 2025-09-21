@@ -98,11 +98,26 @@ def test_document_info():
             file_path="/test/path/image.tif",
             filename="image",
             keyword="test",
+            matched_keyword="test",
             secondary_key="MIP",
             roi_path="/test/path/roi.zip"
         )
-        
-        print(f"✅ DocumentInfo created: {doc.filename} (keyword: {doc.keyword})")
+
+        print(
+            f"✅ DocumentInfo created: {doc.filename} (keyword: {doc.keyword}, matched: {doc.matched_keyword})"
+        )
+
+        multi_doc = DocumentInfo(
+            file_path="/test/path/other_image.tif",
+            filename="other_image",
+            keyword=["alpha", "beta"],
+            matched_keyword="beta"
+        )
+
+        print(
+            "✅ DocumentInfo supports multiple keywords: "
+            f"{multi_doc.keyword} (matched: {multi_doc.matched_keyword})"
+        )
         return True
     except Exception as e:
         print(f"❌ DocumentInfo test failed: {e}")

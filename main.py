@@ -40,7 +40,10 @@ Examples:
     )
     
     parser.add_argument("base_path", nargs="?", help="Base directory containing documents")
-    parser.add_argument("--keyword", help="Keyword to search for in document names")
+    parser.add_argument(
+        "--keyword",
+        help="Keyword or comma-separated keywords to search for in document names"
+    )
     parser.add_argument("--secondary-filter", help="Secondary filter (e.g., 'MIP', 'processed')")
     parser.add_argument("--commands", help="Space-separated macro commands to apply")
     parser.add_argument("--fiji-path", help="Path to Fiji executable (auto-detected if not provided)")
@@ -85,10 +88,10 @@ Examples:
             return 0
         
         if not args.base_path or not args.keyword:
-            print("Error: Both --base_path and --keyword are required for processing")
+            print("Error: Both --base_path and --keyword(s) are required for processing")
             print("Use --help for usage information")
             return 1
-        
+
         # Create processing options
         options = ProcessingOptions(
             apply_roi=args.apply_roi,
@@ -100,9 +103,15 @@ Examples:
         )
         
         # Process documents
+        keyword_input = args.keyword
+        if isinstance(keyword_input, str) and "," in keyword_input:
+            split_keywords = [kw.strip() for kw in keyword_input.split(",") if kw.strip()]
+            if split_keywords:
+                keyword_input = split_keywords
+
         result = processor.process_documents(
             base_path=args.base_path,
-            keyword=args.keyword,
+            keyword=keyword_input,
             macro_commands=args.commands,
             options=options,
             verbose=args.verbose
