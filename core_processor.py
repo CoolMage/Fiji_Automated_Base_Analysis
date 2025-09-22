@@ -7,7 +7,7 @@ All other features are optional and customizable.
 import os
 import json
 import csv
-from typing import List, Dict, Optional, Any, Union
+from typing import List, Dict, Optional, Any, Union, Sequence
 from pathlib import Path
 from dataclasses import dataclass, asdict
 from datetime import datetime
@@ -24,7 +24,8 @@ class DocumentInfo:
     """Information about a document to be processed."""
     file_path: str
     filename: str
-    keyword: str
+    keyword: Union[str, Sequence[str]]
+    matched_keyword: Optional[str] = None
     secondary_key: Optional[str] = None
     roi_path: Optional[str] = None
     measurements: Optional[Dict[str, Any]] = None
@@ -220,7 +221,7 @@ class CoreProcessor:
     Focuses on keyword-based processing with optional features.
     """
     
-    def __init__(self, 
+    def __init__(self,
                  fiji_path: Optional[str] = None,
                  processing_config: Optional[ProcessingConfig] = None,
                  file_config: Optional[FileConfig] = None,
@@ -250,74 +251,112 @@ class CoreProcessor:
         self.fiji_path = fiji_path
         self.macro_builder = MacroBuilder(self.processing_config, self.file_config)
         self.command_library = CommandLibrary()
-        
+
         print(f"Core Processor initialized with Fiji at: {self.fiji_path}")
-    
-    def find_documents_by_keyword(self, 
-                                 base_path: str, 
-                                 keyword: str,
-                                 secondary_filter: Optional[str] = None) -> List[DocumentInfo]:
+
+    @staticmethod
+    def _normalize_keywords(keyword_input: Union[str, Sequence[str]]) -> List[str]:
+        """Normalize keyword input into a list of strings for matching."""
+        if isinstance(keyword_input, str):
+            keywords = [keyword_input]
+        else:
+            try:
+                keywords = list(keyword_input)
+            except TypeError as exc:
+                raise TypeError("keyword must be a string or a sequence of strings") from exc
+
+        normalized_keywords: List[str] = []
+        for kw in keywords:
+            if not isinstance(kw, str):
+                raise TypeError("All keywords must be strings")
+            normalized_keywords.append(kw)
+
+        return normalized_keywords
+
+    @staticmethod
+    def _format_keywords(keyword_input: Union[str, Sequence[str]]) -> str:
+        """Return a human-friendly representation of keyword input."""
+        if isinstance(keyword_input, str):
+            return keyword_input
+        return ", ".join(keyword_input)
+
+    def find_documents_by_keyword(self,
+                                  base_path: str,
+                                  keyword: Union[str, Sequence[str]],
+                                  secondary_filter: Optional[str] = None) -> List[DocumentInfo]:
         """
         Find documents by keyword with optional secondary filtering.
-        
+
         Args:
             base_path: Base directory to search
-            keyword: Primary keyword to search for
+            keyword: Primary keyword or sequence of keywords to search for
             secondary_filter: Optional secondary filter (e.g., "MIP", "processed", etc.)
-            
+
         Returns:
             List of DocumentInfo objects
         """
-        documents = []
-        
+        keyword_list = self._normalize_keywords(keyword)
+        keyword_pairs = [(kw, kw.lower()) for kw in keyword_list]
+        documents: List[DocumentInfo] = []
+
         # Search for files with the keyword
         for root, dirs, files in os.walk(base_path):
             for file in files:
-                if keyword.lower() in file.lower():
-                    # Check secondary filter if specified
-                    if secondary_filter and secondary_filter.lower() not in file.lower():
-                        continue
-                    
-                    file_path = os.path.join(root, file)
-                    filename = os.path.splitext(file)[0]
-                    
-                    # Look for associated ROI file
-                    roi_path = None
-                    roi_candidates = [
-                        os.path.join(root, f"{filename}.roi"),
-                        os.path.join(root, f"{filename}.zip"),
-                        os.path.join(root, f"RoiSet_{filename}.zip")
-                    ]
-                    
-                    for roi_candidate in roi_candidates:
-                        if os.path.exists(roi_candidate):
-                            roi_path = roi_candidate
-                            break
-                    
-                    # Extract secondary key if present
-                    secondary_key = None
-                    if secondary_filter:
-                        # Try to extract the secondary key from filename
-                        for ext in self.file_config.supported_extensions:
-                            if file.lower().endswith(ext.lower()):
-                                base_name = file[:-len(ext)]
-                                if secondary_filter.lower() in base_name.lower():
-                                    secondary_key = secondary_filter
-                                    break
-                    
-                    documents.append(DocumentInfo(
-                        file_path=normalize_path(file_path),
-                        filename=filename,
-                        keyword=keyword,
-                        secondary_key=secondary_key,
-                        roi_path=roi_path
-                    ))
-        
+                file_lower = file.lower()
+                matched_keyword = None
+                for original_keyword, lowered_keyword in keyword_pairs:
+                    if lowered_keyword in file_lower:
+                        matched_keyword = original_keyword
+                        break
+
+                if not matched_keyword:
+                    continue
+
+                # Check secondary filter if specified
+                if secondary_filter and secondary_filter.lower() not in file_lower:
+                    continue
+
+                file_path = os.path.join(root, file)
+                filename = os.path.splitext(file)[0]
+
+                # Look for associated ROI file
+                roi_path = None
+                roi_candidates = [
+                    os.path.join(root, f"{filename}.roi"),
+                    os.path.join(root, f"{filename}.zip"),
+                    os.path.join(root, f"RoiSet_{filename}.zip")
+                ]
+
+                for roi_candidate in roi_candidates:
+                    if os.path.exists(roi_candidate):
+                        roi_path = roi_candidate
+                        break
+
+                # Extract secondary key if present
+                secondary_key = None
+                if secondary_filter:
+                    # Try to extract the secondary key from filename
+                    for ext in self.file_config.supported_extensions:
+                        if file_lower.endswith(ext.lower()):
+                            base_name = file[:-len(ext)]
+                            if secondary_filter.lower() in base_name.lower():
+                                secondary_key = secondary_filter
+                                break
+
+                documents.append(DocumentInfo(
+                    file_path=normalize_path(file_path),
+                    filename=filename,
+                    keyword=keyword,
+                    matched_keyword=matched_keyword,
+                    secondary_key=secondary_key,
+                    roi_path=roi_path
+                ))
+
         return documents
-    
-    def process_documents(self, 
+
+    def process_documents(self,
                          base_path: str,
-                         keyword: str,
+                         keyword: Union[str, Sequence[str]],
                          macro_commands: Union[str, List[str], None] = None,
                          options: Optional[ProcessingOptions] = None,
                          verbose: bool = True) -> Dict[str, Any]:
@@ -326,7 +365,7 @@ class CoreProcessor:
         
         Args:
             base_path: Base directory containing documents
-            keyword: Keyword to search for in filenames
+            keyword: Keyword or sequence of keywords to search for in filenames
             macro_commands: Macro commands to apply (string, list, or None for default)
             options: Optional processing options
             verbose: Whether to print detailed output
@@ -339,22 +378,23 @@ class CoreProcessor:
         
         # Find documents
         documents = self.find_documents_by_keyword(
-            base_path, 
-            keyword, 
+            base_path,
+            keyword,
             options.secondary_filter
         )
-        
+
         if not documents:
             return {
                 "success": False,
-                "error": f"No documents found with keyword '{keyword}'",
+                "error": f"No documents found with keyword(s): {self._format_keywords(keyword)}",
                 "processed_documents": [],
                 "failed_documents": [],
                 "measurements": []
             }
-        
+
         if verbose:
-            print(f"Found {len(documents)} documents with keyword '{keyword}'")
+            keyword_display = self._format_keywords(keyword)
+            print(f"Found {len(documents)} documents matching keyword(s): {keyword_display}")
             if options.secondary_filter:
                 print(f"Secondary filter: '{options.secondary_filter}'")
         
@@ -414,7 +454,8 @@ class CoreProcessor:
                                 verbose: bool) -> Dict[str, Any]:
         """Process a single document."""
         if verbose:
-            print(f"Processing: {doc.filename}")
+            match_info = f" (matched keyword: {doc.matched_keyword})" if doc.matched_keyword else ""
+            print(f"Processing: {doc.filename}{match_info}")
         
         # Prepare image data
         image_data = ImageData(
