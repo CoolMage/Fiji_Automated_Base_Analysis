@@ -175,6 +175,53 @@ macro_commands = [
 ]
 ```
 
+Option C: provide a full macro template string
+
+```python
+custom_macro = """
+// Open .czi file - this will trigger Bio-Formats dialogs
+run("Bio-Formats Importer", "open=[{img_path_fiji}] autoscale color_mode=Default rois_import=[ROI manager] view=Hyperstack stack_order=XYCZT series_1");
+
+originalTitle = getTitle();
+run("Z Project...", "projection=[Max Intensity]");
+selectWindow(originalTitle);
+run("Close");
+run("Split Channels");
+
+// Insert ROI loading code here. The helper `roi_manager_open_block`
+// expands to one `roiManager("Open", path);` line per ROI.
+{roi_manager_open_block}
+roiManager("Measure");
+
+saveAs("Results", "{out_csv}");
+run("Close All");
+run("Quit");
+"""
+
+processor.process_documents(
+    base_path="/data/study",
+    keyword="Control",
+    macro_commands=custom_macro,
+    options=options,
+)
+```
+
+When you supply a complete macro template, the processor injects useful
+variables before execution. The most common placeholders are:
+
+| Placeholder | Description |
+| --- | --- |
+| `{img_path_fiji}`, `{input_path}` | Fiji-friendly path to the current image. |
+| `{img_path_native}` | Original filesystem path to the image. |
+| `{out_tiff}`, `{output_path}` | Target path for processed images (created when `--save-processed` is used). |
+| `{out_csv}`, `{measurements_path}` | Target path for measurement exports (created when `--save-measurements` is enabled). |
+| `{document_name}`, `{file_stem}` | Filename without extension. |
+| `{roi_manager_open_block}` | Multi-line helper that opens every matched ROI using Fiji paths. |
+| `{roi_paths}` / `{roi_paths_native}` | Lists of ROI paths (Fiji-formatted and native). |
+
+Include any other macro logic you need—the template is executed verbatim, so
+remember to add cleanup commands such as `run("Quit");` when necessary.
+
 
 ## Running the built-in smoke tests
 
