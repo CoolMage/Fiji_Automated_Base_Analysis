@@ -14,45 +14,45 @@ def test_imports():
     print("Testing imports...")
     
     try:
-        from config import ProcessingConfig, FileConfig, GroupConfig, FijiConfig
+        from config import ProcessingConfig, FileConfig, FijiConfig
         print("✅ Config modules imported successfully")
     except ImportError as e:
         print(f"❌ Config import failed: {e}")
         return False
-    
+
+    try:
+        from core_processor import CoreProcessor, ProcessingOptions
+        print("✅ Core processor modules imported successfully")
+    except ImportError as e:
+        print(f"❌ Core processor import failed: {e}")
+        return False
+
     try:
         from utils.general.fiji_utils import find_fiji, validate_fiji_path
         print("✅ Fiji utils imported successfully")
     except ImportError as e:
         print(f"❌ Fiji utils import failed: {e}")
         return False
-    
+
     try:
-        from utils.general.file_utils import find_image_files, normalize_path
+        from utils.general.file_utils import normalize_path
         print("✅ File utils imported successfully")
     except ImportError as e:
         print(f"❌ File utils import failed: {e}")
         return False
-    
+
     try:
         from utils.general.macro_builder import MacroBuilder, ImageData, MacroCommand
         print("✅ Macro builder imported successfully")
     except ImportError as e:
         print(f"❌ Macro builder import failed: {e}")
         return False
-    
+
     try:
         from utils.general.macros_operation import run_fiji_macro
         print("✅ Macros operation imported successfully")
     except ImportError as e:
         print(f"❌ Macros operation import failed: {e}")
-        return False
-    
-    try:
-        from fiji_processor import FijiProcessor
-        print("✅ Fiji processor imported successfully")
-    except ImportError as e:
-        print(f"❌ Fiji processor import failed: {e}")
         return False
     
     return True
@@ -62,20 +62,20 @@ def test_configuration():
     print("\nTesting configuration...")
     
     try:
-        from config import ProcessingConfig, FileConfig, GroupConfig
-        
+        from config import ProcessingConfig, FileConfig
+
         # Test ProcessingConfig
         proc_config = ProcessingConfig()
         print(f"✅ ProcessingConfig: rolling_radius={proc_config.rolling_radius}")
-        
+
         # Test FileConfig
         file_config = FileConfig()
-        print(f"✅ FileConfig: {len(file_config.supported_extensions)} extensions")
-        
-        # Test GroupConfig
-        group_config = GroupConfig()
-        print(f"✅ GroupConfig: {len(group_config.groups)} groups")
-        
+        print(
+            "✅ FileConfig: "
+            f"{len(file_config.supported_extensions)} extensions, "
+            f"{len(file_config.bioformats_extensions)} bioformats entries"
+        )
+
         return True
     except Exception as e:
         print(f"❌ Configuration test failed: {e}")
@@ -139,33 +139,22 @@ def test_macro_builder():
         print(f"❌ Macro builder test failed: {e}")
         return False
 
-def test_processor():
-    """Test FijiProcessor initialization."""
-    print("\nTesting FijiProcessor...")
-    
+def test_cli_helpers():
+    """Test keyword and ROI template collection helpers."""
+    print("\nTesting CLI helpers...")
+
     try:
-        from fiji_processor import FijiProcessor
-        
-        # Try to initialize processor (may fail if Fiji not found)
-        try:
-            processor = FijiProcessor()
-            print("✅ FijiProcessor initialized successfully")
-            
-            # Test validation
-            validation = processor.validate_setup()
-            print(f"✅ Validation: {validation['fiji_valid']}")
-            
-        except RuntimeError as e:
-            if "Fiji not found" in str(e):
-                print("⚠️  FijiProcessor initialization failed: Fiji not found")
-                print("   This is expected if Fiji is not installed")
-            else:
-                print(f"❌ FijiProcessor initialization failed: {e}")
-                return False
-        
+        from main import _collect_keywords, _collect_roi_templates
+
+        keywords = _collect_keywords(["4MU, Control", "treated"])
+        print(f"✅ Keyword helper flattened to: {keywords}")
+
+        templates = _collect_roi_templates(["{name}.roi", "{name}_ROI.zip, RoiSet_{name}.zip"])
+        print(f"✅ ROI helper flattened to: {templates}")
+
         return True
     except Exception as e:
-        print(f"❌ Processor test failed: {e}")
+        print(f"❌ CLI helper test failed: {e}")
         return False
 
 def main():
@@ -178,7 +167,7 @@ def main():
         test_configuration,
         test_fiji_detection,
         test_macro_builder,
-        test_processor
+        test_cli_helpers
     ]
     
     passed = 0

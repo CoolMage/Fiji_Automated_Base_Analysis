@@ -58,7 +58,7 @@ setup(
     },
     entry_points={
         "console_scripts": [
-            "fiji-analyze=fiji_processor:main",
+            "fiji-document-processor=main:main",
         ],
     },
     keywords="fiji imagej image processing automation cross-platform bioimaging",

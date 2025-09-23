@@ -25,14 +25,13 @@ if not exist "main.py" (
 REM If no arguments provided, show help
 if "%~1"=="" (
     echo.
-    echo Usage: run_analysis.bat [path_to_images] [options]
+    echo Usage: run_analysis.bat [path_to_documents] [options]
     echo.
     echo Examples:
-    echo   run_analysis.bat C:\Images
-    echo   run_analysis.bat C:\Images --mip-only
-    echo   run_analysis.bat C:\Images --groups "Experimental" "Control"
-    echo   run_analysis.bat C:\Images --process-rois
-    echo   run_analysis.bat C:\Images --validate
+    echo   run_analysis.bat C:\Data --keyword 4MU
+    echo   run_analysis.bat C:\Data --keyword 4MU --keyword Control --apply-roi
+    echo   run_analysis.bat C:\Data --keyword Control --commands "open_standard measure quit"
+    echo   run_analysis.bat --list-commands
     echo.
     pause
     exit /b 0
