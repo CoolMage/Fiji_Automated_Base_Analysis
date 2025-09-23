@@ -646,14 +646,8 @@ class CoreProcessor:
             )
 
         macro_code = self.macro_builder.build_macro_from_commands(commands)
+        macro_code = self._substitute_macro_paths(macro_code, image_data)
 
-        # Substitute template variables
-        macro_code = macro_code.format(
-            input_path=image_data.input_path,
-            output_path=image_data.output_path,
-            measurements_path=image_data.measurements_path
-        )
-        
         if verbose:
             print("Generated macro:")
             print(macro_code)
@@ -667,6 +661,26 @@ class CoreProcessor:
             "measurements": result.get("measurements", {}),
             "error": result.get("error", None)
         }
+
+    @staticmethod
+    def _substitute_macro_paths(macro_code: str, image_data: ImageData) -> str:
+        """Replace known path placeholders without invoking ``str.format``."""
+
+        # ``str.format`` cannot be used because ImageJ control structures
+        # (e.g. ``for (...) {`` blocks) rely on braces that must remain intact
+        # in the generated macro. Replacing placeholders manually keeps the
+        # backwards compatible ``{input_path}``/``{output_path}`` tokens while
+        # leaving all other braces untouched.
+        substitutions = (
+            ("{input_path}", image_data.input_path),
+            ("{output_path}", image_data.output_path),
+            ("{measurements_path}", image_data.measurements_path),
+        )
+
+        for placeholder, value in substitutions:
+            macro_code = macro_code.replace(placeholder, value or "")
+
+        return macro_code
     
     def _save_measurements_summary(
         self,

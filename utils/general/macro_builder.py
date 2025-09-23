@@ -27,6 +27,7 @@ class MacroCommand:
     command: str
     parameters: Optional[Dict[str, Any]] = None
     comment: Optional[str] = None
+    target_channels: Optional[List[int]] = None
 
 
 class MacroBuilder:
@@ -91,12 +92,17 @@ class MacroBuilder:
             Complete macro code as string
         """
         macro_lines = []
-        
+        channel_block_counter = 0
+
         for cmd in commands:
             if cmd.comment:
                 macro_lines.append(f"// {cmd.comment}")
-            
-            if cmd.parameters:
+
+            template = self.command_templates.get(cmd.command, cmd.command)
+            params = dict(cmd.parameters) if cmd.parameters else {}
+            target_channels = list(cmd.target_channels) if cmd.target_channels else None
+
+            if params:
                 # For duplicate command, provide default values for missing parameters
                 if cmd.command == 'duplicate':
                     default_params = {
@@ -106,21 +112,108 @@ class MacroBuilder:
                         'frames': '1-end'
                     }
                     # Merge provided parameters with defaults
-                    merged_params = {**default_params, **cmd.parameters}
-                    macro_code = self.command_templates.get(cmd.command, cmd.command).format(**merged_params)
+                    params = {**default_params, **params}
                 elif cmd.command == 'save_csv':
-                    params = dict(cmd.parameters)
                     if 'measurements_path' not in params and 'output_path' in params:
                         params['measurements_path'] = params.pop('output_path')
-                    macro_code = self.command_templates.get(cmd.command, cmd.command).format(**params)
                 else:
-                    macro_code = self.command_templates.get(cmd.command, cmd.command).format(**cmd.parameters)
+                    params = dict(params)
+
+            if target_channels is None and params:
+                for channel_key in ("apply_channels", "target_channels", "channels", "channel"):
+                    if channel_key in params and f"{{{channel_key}}}" not in template:
+                        raw_value = params.pop(channel_key)
+                        target_channels = self._parse_target_channels(raw_value)
+                        break
+
+            if params:
+                macro_code = template.format(**params)
             else:
-                macro_code = self.command_templates.get(cmd.command, cmd.command)
-            
-            macro_lines.append(macro_code)
-        
+                macro_code = template
+
+            if target_channels:
+                channel_block_counter += 1
+                array_name = f"_channels_{channel_block_counter}"
+                index_name = f"_channel_index_{channel_block_counter}"
+                channel_list = ', '.join(str(ch) for ch in target_channels)
+                macro_lines.append(f"{array_name} = newArray({channel_list});")
+                macro_lines.append(f"for ({index_name} = 0; {index_name} < {array_name}.length; {index_name}++) {{")
+                macro_lines.append(f"    Stack.setChannel(int({array_name}[{index_name}]));")
+                for line in macro_code.splitlines():
+                    macro_lines.append(f"    {line}")
+                macro_lines.append("}")
+            else:
+                macro_lines.append(macro_code)
+
         return '\n'.join(macro_lines)
+
+    @staticmethod
+    def _parse_target_channels(value: Any) -> Optional[List[int]]:
+        """Parse channel selection definitions into a list of integers."""
+
+        if value is None:
+            return None
+
+        if isinstance(value, list):
+            parsed = [int(v) for v in value]
+            return parsed if parsed else None
+
+        if isinstance(value, tuple):
+            parsed = [int(v) for v in value]
+            return parsed if parsed else None
+
+        if isinstance(value, (int, float)):
+            return [int(value)]
+
+        value_str = str(value).strip()
+        if not value_str:
+            return None
+
+        if (value_str.startswith("[") and value_str.endswith("]")) or (
+            value_str.startswith("(") and value_str.endswith(")")
+        ):
+            value_str = value_str[1:-1]
+
+        separators = [',', ';']
+        segments = [value_str]
+        for sep in separators:
+            segments = [
+                subsegment for segment in segments for subsegment in segment.split(sep)
+            ]
+
+        refined_segments = []
+        for segment in segments:
+            refined_segments.extend(segment.split())
+
+        if refined_segments:
+            segments = refined_segments
+
+        channels: List[int] = []
+
+        for segment in segments:
+            part = segment.strip()
+            if not part:
+                continue
+
+            if '-' in part:
+                start_str, end_str = part.split('-', 1)
+                try:
+                    start = int(start_str)
+                    end = int(end_str)
+                except ValueError as exc:
+                    raise ValueError(f"Invalid channel range '{part}'") from exc
+                step = 1 if end >= start else -1
+                channels.extend(range(start, end + step, step))
+            else:
+                try:
+                    channels.append(int(part))
+                except ValueError as exc:
+                    raise ValueError(f"Invalid channel value '{part}'") from exc
+
+        if not channels:
+            return None
+
+        return channels
     
     def build_standard_processing_macro(self, image_data: ImageData) -> str:
         """
