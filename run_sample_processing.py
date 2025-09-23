@@ -36,6 +36,7 @@ def build_options() -> ProcessingOptions:
         measurements_folder="Measurements",
         processed_folder="Processed",
         measurement_summary_prefix="example_study",
+        generate_measurement_summary=True,
         roi_search_templates=("{name}.roi", "{name}.zip", "RoiSet_{name}.zip"),
         secondary_filter="MIP",
     )
