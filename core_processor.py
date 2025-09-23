@@ -551,12 +551,23 @@ class CoreProcessor:
             print(f"Processing: {doc.filename}{match_info}")
         
         # Prepare image data
+        roi_paths_native: Optional[List[str]] = None
+        roi_paths: Optional[List[str]] = None
+        if doc.roi_path and options.apply_roi:
+            normalized_roi_path = normalize_path(doc.roi_path)
+            roi_paths_native = [normalized_roi_path]
+            roi_paths = [convert_path_for_fiji(normalized_roi_path)]
+
         image_data = ImageData(
             input_path=convert_path_for_fiji(doc.file_path),
             output_path="",  # Will be set if saving processed files
             file_extension=os.path.splitext(doc.file_path)[1].lower(),
             is_bioformats=is_bioformats_file(doc.file_path, self.file_config),
-            roi_paths=[doc.roi_path] if doc.roi_path and options.apply_roi else None
+            roi_paths=roi_paths,
+            measurements_path="",
+            source_path=doc.file_path,
+            roi_paths_native=roi_paths_native,
+            document_name=doc.filename,
         )
 
         # Set output path if saving processed files
@@ -568,9 +579,9 @@ class CoreProcessor:
             os.makedirs(target_dir, exist_ok=True)
 
             output_filename = f"{doc.filename}_{options.custom_suffix}.tif"
-            image_data.output_path = convert_path_for_fiji(
-                os.path.join(target_dir, output_filename)
-            )
+            output_native_path = os.path.join(target_dir, output_filename)
+            image_data.output_path_native = output_native_path
+            image_data.output_path = convert_path_for_fiji(output_native_path)
 
         if options.save_measurements_csv:
             csv_dir = measurements_dir or os.path.join(
@@ -580,79 +591,102 @@ class CoreProcessor:
             os.makedirs(csv_dir, exist_ok=True)
 
             csv_filename = f"{doc.filename}_{options.custom_suffix}.csv"
+            measurements_native_path = os.path.join(csv_dir, csv_filename)
+            image_data.measurements_path_native = measurements_native_path
             image_data.measurements_path = convert_path_for_fiji(
-                os.path.join(csv_dir, csv_filename)
+                measurements_native_path
             )
 
         # Build macro
+        custom_macro_template: Optional[str] = None
+        macro_sequence: Union[List[Any], List[MacroCommand]]
+
         if macro_commands is None:
             # Default: open, measure, optionally save outputs, quit
-            macro_commands = ["open_standard", "measure"]
+            macro_sequence = ["open_standard", "measure"]
             if options.save_processed_files:
-                macro_commands.append("save_tiff")
+                macro_sequence.append("save_tiff")
             if options.save_measurements_csv:
-                macro_commands.append("save_csv")
-            macro_commands.append("quit")
+                macro_sequence.append("save_csv")
+            macro_sequence.append("quit")
         elif isinstance(macro_commands, str):
-            # Parse command string
-            macro_commands = macro_commands.split()
-        
-        # Build macro from commands
-        commands = []
-        for cmd_str in macro_commands:
-            if " " in cmd_str and "=" in cmd_str:
-                # Command with parameters (e.g., "subtract_background radius=50")
-                parts = cmd_str.split(" ", 1)
-                cmd_name = parts[0]
-                params = {}
-                if len(parts) > 1:
-                    for param in parts[1].split():
-                        if "=" in param:
-                            key, value = param.split("=", 1)
-                            params[key.strip()] = value.strip()
-                commands.append(MacroCommand(cmd_name.strip(), params))
+            stripped_macro = macro_commands.strip()
+            if "\n" in stripped_macro or ";" in stripped_macro:
+                custom_macro_template = stripped_macro
+                macro_sequence = []
             else:
-                commands.append(MacroCommand(cmd_str.strip()))
-        
-        # Ensure quit command is present to close Fiji
-        if not any(cmd.command == "quit" for cmd in commands):
-            commands.append(MacroCommand("quit"))
+                macro_sequence = stripped_macro.split()
+        else:
+            macro_sequence = list(macro_commands)
 
-        needs_processed_output = any(cmd.command == "save_tiff" for cmd in commands)
-        needs_measurement_output = any(cmd.command == "save_csv" for cmd in commands)
+        if custom_macro_template is None:
+            # Build macro from command list or MacroCommand objects
+            commands: List[MacroCommand] = []
+            for item in macro_sequence:
+                if isinstance(item, MacroCommand):
+                    commands.append(item)
+                    continue
 
-        if needs_processed_output and not image_data.output_path:
-            target_dir = processed_dir or os.path.join(
-                os.path.dirname(doc.file_path), options.processed_folder
+                cmd_str = str(item)
+                if " " in cmd_str and "=" in cmd_str:
+                    # Command with parameters (e.g., "subtract_background radius=50")
+                    parts = cmd_str.split(" ", 1)
+                    cmd_name = parts[0]
+                    params = {}
+                    if len(parts) > 1:
+                        for param in parts[1].split():
+                            if "=" in param:
+                                key, value = param.split("=", 1)
+                                params[key.strip()] = value.strip()
+                    commands.append(MacroCommand(cmd_name.strip(), params))
+                else:
+                    commands.append(MacroCommand(cmd_str.strip()))
+
+            # Ensure quit command is present to close Fiji
+            if not any(cmd.command == "quit" for cmd in commands):
+                commands.append(MacroCommand("quit"))
+
+            needs_processed_output = any(cmd.command == "save_tiff" for cmd in commands)
+            needs_measurement_output = any(cmd.command == "save_csv" for cmd in commands)
+
+            if needs_processed_output and not image_data.output_path:
+                target_dir = processed_dir or os.path.join(
+                    os.path.dirname(doc.file_path), options.processed_folder
+                )
+                target_dir = os.path.abspath(target_dir)
+                os.makedirs(target_dir, exist_ok=True)
+
+                output_filename = f"{doc.filename}_{options.custom_suffix}.tif"
+                output_native_path = os.path.join(target_dir, output_filename)
+                image_data.output_path_native = output_native_path
+                image_data.output_path = convert_path_for_fiji(output_native_path)
+
+            if needs_measurement_output and not image_data.measurements_path:
+                csv_dir = measurements_dir or os.path.join(
+                    os.path.dirname(doc.file_path), options.measurements_folder
+                )
+                csv_dir = os.path.abspath(csv_dir)
+                os.makedirs(csv_dir, exist_ok=True)
+
+                csv_filename = f"{doc.filename}_{options.custom_suffix}.csv"
+                measurements_native_path = os.path.join(csv_dir, csv_filename)
+                image_data.measurements_path_native = measurements_native_path
+                image_data.measurements_path = convert_path_for_fiji(
+                    measurements_native_path
+                )
+
+            macro_code = self.macro_builder.build_macro_from_commands(commands)
+
+            # Substitute template variables
+            macro_code = macro_code.format(
+                input_path=image_data.input_path,
+                output_path=image_data.output_path,
+                measurements_path=image_data.measurements_path
             )
-            target_dir = os.path.abspath(target_dir)
-            os.makedirs(target_dir, exist_ok=True)
-
-            output_filename = f"{doc.filename}_{options.custom_suffix}.tif"
-            image_data.output_path = convert_path_for_fiji(
-                os.path.join(target_dir, output_filename)
+        else:
+            macro_code = self.macro_builder.build_custom_macro(
+                custom_macro_template, image_data
             )
-
-        if needs_measurement_output and not image_data.measurements_path:
-            csv_dir = measurements_dir or os.path.join(
-                os.path.dirname(doc.file_path), options.measurements_folder
-            )
-            csv_dir = os.path.abspath(csv_dir)
-            os.makedirs(csv_dir, exist_ok=True)
-
-            csv_filename = f"{doc.filename}_{options.custom_suffix}.csv"
-            image_data.measurements_path = convert_path_for_fiji(
-                os.path.join(csv_dir, csv_filename)
-            )
-
-        macro_code = self.macro_builder.build_macro_from_commands(commands)
-
-        # Substitute template variables
-        macro_code = macro_code.format(
-            input_path=image_data.input_path,
-            output_path=image_data.output_path,
-            measurements_path=image_data.measurements_path
-        )
         
         if verbose:
             print("Generated macro:")

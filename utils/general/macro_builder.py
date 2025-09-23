@@ -12,6 +12,7 @@ from config import ProcessingConfig, FileConfig
 @dataclass
 class ImageData:
     """Data structure containing information about the image to process."""
+
     input_path: str
     output_path: str
     file_extension: str
@@ -19,6 +20,11 @@ class ImageData:
     roi_paths: Optional[List[str]] = None
     processing_params: Optional[Dict[str, Any]] = None
     measurements_path: str = ""
+    source_path: str = ""
+    roi_paths_native: Optional[List[str]] = None
+    output_path_native: str = ""
+    measurements_path_native: str = ""
+    document_name: Optional[str] = None
 
 
 @dataclass
@@ -274,8 +280,11 @@ class MacroBuilder:
         
         return self.build_macro_from_commands(commands)
     
-    def build_custom_macro(self, custom_commands: Union[str, List[str]], 
-                          image_data: Optional[ImageData] = None) -> str:
+    def build_custom_macro(
+        self,
+        custom_commands: Union[str, List[str]],
+        image_data: Optional[ImageData] = None,
+    ) -> str:
         """
         Build a macro from custom commands or template.
         
@@ -287,17 +296,20 @@ class MacroBuilder:
             Complete macro code as string
         """
         if isinstance(custom_commands, str):
-            # If it's a template string, substitute variables
-            if image_data:
-                return custom_commands.format(
-                    input_path=image_data.input_path,
-                    output_path=image_data.output_path,
-                    measurements_path=image_data.measurements_path,
-                    IMG=image_data.input_path,
-                    OUT=image_data.output_path,
-                    CSV=image_data.measurements_path
-                )
-            return custom_commands
+            if not image_data:
+                return custom_commands
+
+            context = self._build_template_context(image_data)
+
+            try:
+                return custom_commands.format(**context)
+            except KeyError as exc:
+                missing = exc.args[0]
+                available = ", ".join(sorted(context))
+                raise ValueError(
+                    f"Unknown placeholder '{{{missing}}}' in custom macro. "
+                    f"Available keys: {available}"
+                ) from exc
         
         elif isinstance(custom_commands, list):
             # Convert list of strings to MacroCommand objects
@@ -306,6 +318,61 @@ class MacroBuilder:
         
         else:
             raise ValueError("custom_commands must be a string or list of strings")
+
+    def _build_template_context(self, image_data: ImageData) -> Dict[str, Any]:
+        """Return template variables available to custom macros."""
+
+        roi_paths = image_data.roi_paths or []
+        roi_paths_native = image_data.roi_paths_native or []
+
+        roi_manager_open_block = "\n".join(
+            f'roiManager("Open", "{path}");' for path in roi_paths
+        )
+        roi_manager_open_native_block = "\n".join(
+            f'roiManager("Open", "{path}");' for path in roi_paths_native
+        )
+
+        context: Dict[str, Any] = {
+            # Input paths
+            "input_path": image_data.input_path,
+            "input_path_fiji": image_data.input_path,
+            "input_path_native": image_data.source_path or image_data.input_path,
+            "img_path_fiji": image_data.input_path,
+            "img_path": image_data.source_path or image_data.input_path,
+            "img_path_native": image_data.source_path or image_data.input_path,
+            "IMG": image_data.input_path,
+
+            # Output / processed paths
+            "output_path": image_data.output_path,
+            "output_path_fiji": image_data.output_path,
+            "output_path_native": image_data.output_path_native or image_data.output_path,
+            "out_tiff": image_data.output_path,
+            "out_image": image_data.output_path,
+            "OUT": image_data.output_path,
+
+            # Measurement exports
+            "measurements_path": image_data.measurements_path,
+            "measurements_path_fiji": image_data.measurements_path,
+            "measurements_path_native": (
+                image_data.measurements_path_native or image_data.measurements_path
+            ),
+            "out_csv": image_data.measurements_path,
+            "CSV": image_data.measurements_path,
+
+            # Document metadata
+            "document_name": image_data.document_name or "",
+            "file_stem": image_data.document_name or "",
+
+            # ROI helpers
+            "roi_paths": roi_paths,
+            "roi_paths_native": roi_paths_native,
+            "roi_paths_joined": "\n".join(roi_paths),
+            "roi_paths_native_joined": "\n".join(roi_paths_native),
+            "roi_manager_open_block": roi_manager_open_block,
+            "roi_manager_open_native_block": roi_manager_open_native_block,
+        }
+
+        return context
     
     def parse_simple_commands(self, command_string: str) -> List[MacroCommand]:
         """

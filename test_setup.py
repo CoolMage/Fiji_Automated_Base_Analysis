@@ -108,7 +108,7 @@ def test_fiji_detection():
 def test_macro_builder():
     """Test macro builder functionality."""
     print("\nTesting macro builder...")
-    
+
     try:
         from utils.general.macro_builder import MacroBuilder, ImageData, MacroCommand
         from config import ProcessingConfig, FileConfig
@@ -134,10 +134,60 @@ def test_macro_builder():
         # Test simple command parsing
         commands = builder.parse_simple_commands("open_standard convert_8bit save_tiff")
         print(f"✅ Parsed {len(commands)} simple commands")
-        
+
         return True
     except Exception as e:
         print(f"❌ Macro builder test failed: {e}")
+        return False
+
+
+def test_custom_macro_template():
+    """Ensure custom macro templates expand placeholders correctly."""
+    print("\nTesting custom macro templates...")
+
+    try:
+        from utils.general.macro_builder import MacroBuilder, ImageData
+
+        builder = MacroBuilder()
+        image_data = ImageData(
+            input_path="/converted/input.tif",
+            output_path="/converted/output.tif",
+            file_extension=".tif",
+            is_bioformats=True,
+            roi_paths=[
+                "/converted/roi1.zip",
+                "/converted/roi2.zip",
+            ],
+            roi_paths_native=[
+                "/native/roi1.zip",
+                "/native/roi2.zip",
+            ],
+            measurements_path="/converted/results.csv",
+            source_path="/native/input.tif",
+            output_path_native="/native/output.tif",
+            measurements_path_native="/native/results.csv",
+            document_name="sample_image",
+        )
+
+        template = (
+            'run("Bio-Formats Importer", "open=[{img_path_fiji}] view=Hyperstack");\n'
+            "{roi_manager_open_block}\n"
+            'saveAs("Results", "{out_csv}");'
+        )
+
+        macro_code = builder.build_custom_macro(template, image_data)
+
+        if (
+            image_data.input_path not in macro_code
+            or 'roiManager("Open", "/converted/roi1.zip");' not in macro_code
+            or image_data.measurements_path not in macro_code
+        ):
+            raise AssertionError("Template placeholders did not expand as expected")
+
+        print("✅ Custom macro template expanded correctly")
+        return True
+    except Exception as e:
+        print(f"❌ Custom macro template test failed: {e}")
         return False
 
 def test_cli_helpers():
@@ -168,6 +218,7 @@ def main():
         test_configuration,
         test_fiji_detection,
         test_macro_builder,
+        test_custom_macro_template,
         test_cli_helpers
     ]
     
