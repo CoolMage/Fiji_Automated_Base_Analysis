@@ -49,6 +49,10 @@ def main() -> None:
 
     macro_commands = [
         "open_bioformats",
+        'subtract_background radius=30',
+        'median_filter radius=2',
+        'enhance_contrast saturated=0.4 normalize',
+        "save_tiff",
         "measure",
         "save_csv",
         "quit",
