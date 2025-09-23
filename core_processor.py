@@ -693,12 +693,7 @@ class CoreProcessor:
             for row in summary_rows:
                 writer.writerow(row)
 
-        # Save as JSON
-        json_path = os.path.join(measurements_dir, f"{prefix}_{timestamp}.json")
-        with open(json_path, "w", encoding="utf-8") as jsonfile:
-            json.dump(summary_rows, jsonfile, indent=2, default=str)
-
-        print(f"Measurements saved to: {csv_path} and {json_path}")
+        print(f"Measurements saved to: {csv_path}")
 
     def _prepare_summary_rows(
         self,
