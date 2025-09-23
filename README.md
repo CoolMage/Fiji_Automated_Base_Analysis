@@ -188,3 +188,19 @@ python test_core_setup.py
 
 They focus on import checks, helper utilities, and validating that the processor
 handles both single and multiple keywords.
+
+## Don't know what to do?
+
+- Open `run_sample_processing.py`
+- Replace `base_path` with the path to the folder where your data is stored.
+- Replace `keyword` with keywords in the file names so the script can distinguish them.
+- Replace macro_commands with the list of commands you need to execute. You can check the list of commands in the `macro_builder.py` document.
+- Run `run_sample_processing.py`
+
+
+## What's next for updates?
+
+- Integration of built-in complex commands
+- Pre-written macro library
+- Adding the ability to select the channel to be processed
+- Optional automatic data visualization
