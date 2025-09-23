@@ -18,6 +18,7 @@ class ImageData:
     is_bioformats: bool = False
     roi_paths: Optional[List[str]] = None
     processing_params: Optional[Dict[str, Any]] = None
+    measurements_path: str = ""
 
 
 @dataclass
@@ -42,7 +43,7 @@ class MacroBuilder:
             'open_bioformats': 'run("Bio-Formats Importer", "open=[{input_path}] autoscale color_mode=Default rois_import=[ROI manager] view=Hyperstack stack_order=XYCZT series_1");',
             'open_standard': 'open("{input_path}");',
             'save_tiff': 'saveAs("Tiff", "{output_path}");',
-            'save_csv': 'saveAs("Measurements", "{output_path}");',
+            'save_csv': 'saveAs("Measurements", "{measurements_path}");',
             
             # Image processing
             'convert_8bit': 'run("8-bit");',
@@ -107,6 +108,11 @@ class MacroBuilder:
                     # Merge provided parameters with defaults
                     merged_params = {**default_params, **cmd.parameters}
                     macro_code = self.command_templates.get(cmd.command, cmd.command).format(**merged_params)
+                elif cmd.command == 'save_csv':
+                    params = dict(cmd.parameters)
+                    if 'measurements_path' not in params and 'output_path' in params:
+                        params['measurements_path'] = params.pop('output_path')
+                    macro_code = self.command_templates.get(cmd.command, cmd.command).format(**params)
                 else:
                     macro_code = self.command_templates.get(cmd.command, cmd.command).format(**cmd.parameters)
             else:
@@ -286,8 +292,10 @@ class MacroBuilder:
                 return custom_commands.format(
                     input_path=image_data.input_path,
                     output_path=image_data.output_path,
+                    measurements_path=image_data.measurements_path,
                     IMG=image_data.input_path,
-                    OUT=image_data.output_path
+                    OUT=image_data.output_path,
+                    CSV=image_data.measurements_path
                 )
             return custom_commands
         

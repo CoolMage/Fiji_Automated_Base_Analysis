@@ -74,6 +74,7 @@ def test_processing_options():
         print(
             "✅ Default options: apply_roi="
             f"{options.apply_roi}, save_processed={options.save_processed_files}, "
+            f"save_measurements={options.save_measurements_csv}, "
             f"summary_prefix={options.measurement_summary_prefix}"
         )
 
@@ -81,6 +82,7 @@ def test_processing_options():
         custom_options = ProcessingOptions(
             apply_roi=True,
             save_processed_files=True,
+            save_measurements_csv=True,
             custom_suffix="test",
             secondary_filter="MIP",
             measurement_summary_prefix="demo",
@@ -89,6 +91,7 @@ def test_processing_options():
         print(
             "✅ Custom options: suffix='"
             f"{custom_options.custom_suffix}', filter='{custom_options.secondary_filter}', "
+            f"save_measurements={custom_options.save_measurements_csv}, "
             f"roi_templates={custom_options.roi_search_templates}"
         )
         

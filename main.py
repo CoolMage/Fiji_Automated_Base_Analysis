@@ -68,6 +68,11 @@ def main() -> int:
     parser.add_argument("--apply-roi", action="store_true", help="Apply ROI files when found using the configured templates.")
     parser.add_argument("--save-processed", action="store_true", help="Save processed images using the configured suffix.")
     parser.add_argument(
+        "--save-measurements",
+        action="store_true",
+        help="Save per-document measurement CSV exports using the configured folder.",
+    )
+    parser.add_argument(
         "--suffix",
         default="processed",
         help="Suffix appended to processed filenames (default: 'processed').",
@@ -151,6 +156,7 @@ def main() -> int:
         options = ProcessingOptions(
             apply_roi=args.apply_roi,
             save_processed_files=args.save_processed,
+            save_measurements_csv=args.save_measurements,
             custom_suffix=args.suffix,
             secondary_filter=args.secondary_filter,
             measurements_folder=args.measurements_folder,
