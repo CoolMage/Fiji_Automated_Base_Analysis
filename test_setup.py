@@ -122,7 +122,8 @@ def test_macro_builder():
             input_path="/test/input.tif",
             output_path="/test/output.tif",
             file_extension=".tif",
-            is_bioformats=False
+            is_bioformats=False,
+            measurements_path="/test/output.csv"
         )
         print("✅ ImageData created successfully")
         

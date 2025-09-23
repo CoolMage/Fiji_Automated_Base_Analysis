@@ -31,6 +31,7 @@ def build_options() -> ProcessingOptions:
     return ProcessingOptions(
         apply_roi=False,
         save_processed_files=True,
+        save_measurements_csv=True,
         custom_suffix="analyzed",
         measurements_folder="Measurements",
         processed_folder="Processed",

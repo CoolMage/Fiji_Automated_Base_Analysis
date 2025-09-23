@@ -38,6 +38,7 @@ class ProcessingOptions:
 
     apply_roi: bool = False
     save_processed_files: bool = False
+    save_measurements_csv: bool = False
     custom_suffix: str = "processed"
     secondary_filter: Optional[str] = None
     measurements_folder: str = "Measurements"
@@ -68,7 +69,7 @@ class CommandLibrary:
         },
         "save_csv": {
             "description": "Save measurements as CSV",
-            "parameters": {"output_path": "Path for CSV file"},
+            "parameters": {"measurements_path": "Path for CSV file"},
             "example": "save_csv"
         },
         
@@ -464,6 +465,7 @@ class CoreProcessor:
                     options,
                     verbose,
                     processed_dir,
+                    measurements_dir,
                 )
 
                 if result["success"]:
@@ -524,6 +526,7 @@ class CoreProcessor:
         options: ProcessingOptions,
         verbose: bool,
         processed_dir: Optional[str] = None,
+        measurements_dir: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Process a single document."""
         if verbose:
@@ -538,7 +541,7 @@ class CoreProcessor:
             is_bioformats=is_bioformats_file(doc.file_path, self.file_config),
             roi_paths=[doc.roi_path] if doc.roi_path and options.apply_roi else None
         )
-        
+
         # Set output path if saving processed files
         if options.save_processed_files:
             target_dir = processed_dir or os.path.join(
@@ -552,10 +555,27 @@ class CoreProcessor:
                 os.path.join(target_dir, output_filename)
             )
 
+        if options.save_measurements_csv:
+            csv_dir = measurements_dir or os.path.join(
+                os.path.dirname(doc.file_path), options.measurements_folder
+            )
+            csv_dir = os.path.abspath(csv_dir)
+            os.makedirs(csv_dir, exist_ok=True)
+
+            csv_filename = f"{doc.filename}_{options.custom_suffix}.csv"
+            image_data.measurements_path = convert_path_for_fiji(
+                os.path.join(csv_dir, csv_filename)
+            )
+
         # Build macro
         if macro_commands is None:
-            # Default: open, measure, save measurements, quit
-            macro_commands = ["open_standard", "measure", "save_csv", "quit"]
+            # Default: open, measure, optionally save outputs, quit
+            macro_commands = ["open_standard", "measure"]
+            if options.save_processed_files:
+                macro_commands.append("save_tiff")
+            if options.save_measurements_csv:
+                macro_commands.append("save_csv")
+            macro_commands.append("quit")
         elif isinstance(macro_commands, str):
             # Parse command string
             macro_commands = macro_commands.split()
@@ -580,13 +600,41 @@ class CoreProcessor:
         # Ensure quit command is present to close Fiji
         if not any(cmd.command == "quit" for cmd in commands):
             commands.append(MacroCommand("quit"))
-        
+
+        needs_processed_output = any(cmd.command == "save_tiff" for cmd in commands)
+        needs_measurement_output = any(cmd.command == "save_csv" for cmd in commands)
+
+        if needs_processed_output and not image_data.output_path:
+            target_dir = processed_dir or os.path.join(
+                os.path.dirname(doc.file_path), options.processed_folder
+            )
+            target_dir = os.path.abspath(target_dir)
+            os.makedirs(target_dir, exist_ok=True)
+
+            output_filename = f"{doc.filename}_{options.custom_suffix}.tif"
+            image_data.output_path = convert_path_for_fiji(
+                os.path.join(target_dir, output_filename)
+            )
+
+        if needs_measurement_output and not image_data.measurements_path:
+            csv_dir = measurements_dir or os.path.join(
+                os.path.dirname(doc.file_path), options.measurements_folder
+            )
+            csv_dir = os.path.abspath(csv_dir)
+            os.makedirs(csv_dir, exist_ok=True)
+
+            csv_filename = f"{doc.filename}_{options.custom_suffix}.csv"
+            image_data.measurements_path = convert_path_for_fiji(
+                os.path.join(csv_dir, csv_filename)
+            )
+
         macro_code = self.macro_builder.build_macro_from_commands(commands)
-        
+
         # Substitute template variables
         macro_code = macro_code.format(
             input_path=image_data.input_path,
-            output_path=image_data.output_path
+            output_path=image_data.output_path,
+            measurements_path=image_data.measurements_path
         )
         
         if verbose:
