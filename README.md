@@ -82,6 +82,9 @@ python main.py /data/study --keyword Control --apply-roi \
 python main.py /data/study --keyword 4MU --save-processed --suffix analyzed \
     --measurement-prefix studyA
 
+# Disable the combined summary table while still exporting per-file measurements
+python main.py /data/study --keyword 4MU --save-measurements --skip-measurement-summary
+
 # Show every built-in macro command
 python main.py --list-commands
 
@@ -103,6 +106,7 @@ python main.py --validate
 | `--measurements-folder` | Directory (under the base path) for measurement exports. |
 | `--processed-folder` | Directory (under the base path) for processed images. |
 | `--measurement-prefix` | Prefix used when saving CSV/JSON measurement summaries. |
+| `--skip-measurement-summary` | Skip creation of the combined summary table generated from saved CSV files. |
 | `--fiji-path` | Explicit path to the Fiji executable. |
 | `--verbose` | Print detailed progress, including the matched keyword for each file. |
 
@@ -128,10 +132,12 @@ processor = CoreProcessor(
 options = ProcessingOptions(
     apply_roi=True,
     save_processed_files=True,
+    save_measurements_csv=True,
     custom_suffix="analyzed",
     measurements_folder="Measurements",
     processed_folder="Processed",
     measurement_summary_prefix="studyA",
+    generate_measurement_summary=True,
     roi_search_templates=("{name}.zip", "RoiSet_{name}.zip"),
 )
 

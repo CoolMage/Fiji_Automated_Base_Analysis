@@ -93,6 +93,11 @@ def main() -> int:
         help="Prefix for generated measurement summary files (CSV and JSON).",
     )
     parser.add_argument(
+        "--skip-measurement-summary",
+        action="store_true",
+        help="Disable creation of the combined measurement summary table.",
+    )
+    parser.add_argument(
         "--roi-template",
         action="append",
         help="ROI filename template using {name} as the placeholder for the document stem. Repeat or comma-separate values.",
@@ -162,6 +167,7 @@ def main() -> int:
             measurements_folder=args.measurements_folder,
             processed_folder=args.processed_folder,
             measurement_summary_prefix=args.measurement_prefix,
+            generate_measurement_summary=not args.skip_measurement_summary,
             roi_search_templates=roi_templates,
         )
 

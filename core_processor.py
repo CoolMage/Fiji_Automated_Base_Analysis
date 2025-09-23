@@ -44,6 +44,7 @@ class ProcessingOptions:
     measurements_folder: str = "Measurements"
     processed_folder: str = "Processed_Files"
     measurement_summary_prefix: str = "measurements_summary"
+    generate_measurement_summary: bool = True
     roi_search_templates: Optional[Sequence[str]] = None
 
 
@@ -446,7 +447,7 @@ class CoreProcessor:
             "measurements": [],
             "searched_keywords": list(normalized_keywords),
         }
-        
+
         # Create output directories
         measurements_dir = os.path.join(base_path, options.measurements_folder)
         processed_dir: Optional[str] = None
@@ -455,9 +456,15 @@ class CoreProcessor:
             os.makedirs(processed_dir, exist_ok=True)
 
         os.makedirs(measurements_dir, exist_ok=True)
+        generated_csv_entries: List[Tuple[str, DocumentInfo]] = []
 
         # Process each document
         for doc in documents:
+            expected_csv_path: Optional[str] = None
+            if options.save_measurements_csv:
+                expected_csv_path = os.path.join(
+                    measurements_dir, f"{doc.filename}_{options.custom_suffix}.csv"
+                )
             try:
                 result = self._process_single_document(
                     doc,
@@ -487,6 +494,12 @@ class CoreProcessor:
                                 "measurements": doc.measurements,
                             }
                         )
+                    if (
+                        options.save_measurements_csv
+                        and expected_csv_path
+                        and os.path.exists(expected_csv_path)
+                    ):
+                        generated_csv_entries.append((expected_csv_path, doc))
                 else:
                     results["failed_documents"].append(
                         {
@@ -509,11 +522,15 @@ class CoreProcessor:
                 })
         
         # Save measurements summary
-        if results["measurements"]:
+        if (
+            options.generate_measurement_summary
+            and (generated_csv_entries or results["measurements"])
+        ):
             self._save_measurements_summary(
                 measurements_dir,
                 results["measurements"],
                 options.measurement_summary_prefix,
+                csv_entries=generated_csv_entries,
             )
 
         results["success"] = len(results["failed_documents"]) == 0
@@ -656,8 +673,14 @@ class CoreProcessor:
         measurements_dir: str,
         measurements: List[Dict[str, Any]],
         prefix: str,
+        csv_entries: Optional[Sequence[Tuple[str, DocumentInfo]]] = None,
     ) -> None:
-        """Save measurements summary to CSV and JSON using a custom prefix."""
+        """Save measurements summary compiled from per-document exports."""
+
+        summary_rows, fieldnames = self._prepare_summary_rows(measurements, csv_entries)
+
+        if not summary_rows:
+            return
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         prefix = prefix or "measurements_summary"
@@ -665,33 +688,123 @@ class CoreProcessor:
         # Save as CSV
         csv_path = os.path.join(measurements_dir, f"{prefix}_{timestamp}.csv")
         with open(csv_path, "w", newline="", encoding="utf-8") as csvfile:
-            if measurements:
-                # Get all unique measurement keys
-                all_keys = set()
-                for measurement_entry in measurements:
-                    if isinstance(measurement_entry.get("measurements"), dict):
-                        all_keys.update(measurement_entry["measurements"].keys())
-
-                fieldnames = ["filename", "matched_keyword", "secondary_key"] + sorted(all_keys)
-                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-                writer.writeheader()
-
-                for measurement_entry in measurements:
-                    row = {
-                        "filename": measurement_entry.get("filename"),
-                        "matched_keyword": measurement_entry.get("matched_keyword"),
-                        "secondary_key": measurement_entry.get("secondary_key"),
-                    }
-                    if isinstance(measurement_entry.get("measurements"), dict):
-                        row.update(measurement_entry["measurements"])
-                    writer.writerow(row)
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            writer.writeheader()
+            for row in summary_rows:
+                writer.writerow(row)
 
         # Save as JSON
         json_path = os.path.join(measurements_dir, f"{prefix}_{timestamp}.json")
         with open(json_path, "w", encoding="utf-8") as jsonfile:
-            json.dump(measurements, jsonfile, indent=2, default=str)
+            json.dump(summary_rows, jsonfile, indent=2, default=str)
 
         print(f"Measurements saved to: {csv_path} and {json_path}")
+
+    def _prepare_summary_rows(
+        self,
+        measurements: List[Dict[str, Any]],
+        csv_entries: Optional[Sequence[Tuple[str, DocumentInfo]]] = None,
+    ) -> Tuple[List[Dict[str, Any]], List[str]]:
+        """Create summary table rows from saved CSVs or in-memory measurements."""
+
+        if csv_entries:
+            summary_rows, fieldnames = self._build_summary_rows_from_csvs(csv_entries)
+            if summary_rows:
+                return summary_rows, fieldnames
+
+        return self._build_summary_rows_from_measurements(measurements)
+
+    def _build_summary_rows_from_csvs(
+        self,
+        csv_entries: Sequence[Tuple[str, DocumentInfo]],
+    ) -> Tuple[List[Dict[str, Any]], List[str]]:
+        """Collect rows from saved measurement CSV files with metadata."""
+
+        summary_rows: List[Dict[str, Any]] = []
+        metadata_fields = [
+            "document_name",
+            "source_csv",
+            "source_image_path",
+            "keywords",
+            "matched_keyword",
+            "secondary_key",
+        ]
+        csv_fields: List[str] = []
+
+        for csv_path, doc in csv_entries:
+            if not csv_path or not os.path.exists(csv_path):
+                continue
+
+            try:
+                with open(csv_path, newline="", encoding="utf-8-sig") as csvfile:
+                    reader = csv.DictReader(csvfile)
+                    if reader.fieldnames:
+                        for field in reader.fieldnames:
+                            if (
+                                field
+                                and field not in metadata_fields
+                                and field not in csv_fields
+                            ):
+                                csv_fields.append(field)
+
+                    for row in reader:
+                        if row is None:
+                            continue
+
+                        cleaned_row = {
+                            key: value for key, value in row.items() if key is not None
+                        }
+
+                        if not cleaned_row:
+                            continue
+
+                        metadata = {
+                            "document_name": doc.filename,
+                            "source_csv": os.path.basename(csv_path),
+                            "source_image_path": doc.file_path,
+                            "keywords": ", ".join(str(kw) for kw in doc.keywords),
+                            "matched_keyword": doc.matched_keyword or "",
+                            "secondary_key": doc.secondary_key or "",
+                        }
+
+                        summary_row = {**metadata, **cleaned_row}
+                        summary_rows.append(summary_row)
+            except (OSError, csv.Error):
+                continue
+
+        fieldnames = metadata_fields + csv_fields
+        return summary_rows, fieldnames
+
+    def _build_summary_rows_from_measurements(
+        self,
+        measurements: List[Dict[str, Any]],
+    ) -> Tuple[List[Dict[str, Any]], List[str]]:
+        """Fallback summary rows using in-memory measurements."""
+
+        if not measurements:
+            return [], []
+
+        all_keys: List[str] = []
+        for measurement_entry in measurements:
+            if isinstance(measurement_entry.get("measurements"), dict):
+                for key in measurement_entry["measurements"].keys():
+                    if key not in all_keys:
+                        all_keys.append(key)
+
+        fieldnames = ["filename", "matched_keyword", "secondary_key"] + all_keys
+        summary_rows: List[Dict[str, Any]] = []
+
+        for measurement_entry in measurements:
+            row = {
+                "filename": measurement_entry.get("filename"),
+                "matched_keyword": measurement_entry.get("matched_keyword"),
+                "secondary_key": measurement_entry.get("secondary_key"),
+            }
+            if isinstance(measurement_entry.get("measurements"), dict):
+                row.update(measurement_entry["measurements"])
+            summary_rows.append(row)
+
+        return summary_rows, fieldnames
     
     def get_available_commands(self) -> Dict[str, Dict[str, Any]]:
         """Get all available commands with descriptions."""
