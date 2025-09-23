@@ -1,80 +1,120 @@
-"""
-Fiji Document Processor - Main Entry Point
-Database-driven document processing with measurements and optional features.
-"""
+"""Command-line interface for the Fiji document processor."""
 
-import os
 import argparse
-from typing import Optional, List
+import os
+from typing import List, Optional, Union
 
-from core_processor import CoreProcessor, ProcessingOptions, CommandLibrary
-from config import ProcessingConfig, FileConfig, GroupConfig
-from utils.general.fiji_utils import find_fiji
+from core_processor import CommandLibrary, CoreProcessor, ProcessingOptions
 
 
-def main():
-    """Main entry point for the Fiji Document Processor."""
+def _collect_keywords(keyword_args: List[str]) -> List[str]:
+    """Expand a list of keyword arguments into individual values."""
+
+    keywords: List[str] = []
+    for raw_value in keyword_args:
+        parts = [part.strip() for part in raw_value.split(",")]
+        keywords.extend(part for part in parts if part)
+
+    return keywords
+
+
+def _collect_roi_templates(template_args: List[str]) -> List[str]:
+    """Expand ROI template arguments into individual templates."""
+
+    templates: List[str] = []
+    for raw_value in template_args:
+        parts = [part.strip() for part in raw_value.split(",")]
+        templates.extend(part for part in parts if part)
+
+    return templates
+
+
+def main() -> int:
+    """Main entry point for keyword-driven Fiji automation."""
+
     parser = argparse.ArgumentParser(
-        description="Fiji Document Processor - Database-driven document processing with measurements",
+        description="Process files in a directory tree by matching filename keywords and running Fiji macros",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  # Basic processing - find documents with keyword and measure them
-  python main.py /path/to/documents --keyword "experimental"
+        epilog="""Examples:
+  # Basic processing for a single keyword
+  python main.py /data/study --keyword 4MU
 
-  # Process with secondary filter (e.g., MIP files)
-  python main.py /path/to/documents --keyword "experimental" --secondary-filter "MIP"
+  # Process multiple keywords and provide custom ROI templates
+  python main.py /data/study --keyword 4MU --keyword Control --roi-template "{name}_ROI.zip"
 
-  # Apply custom macro commands
-  python main.py /path/to/documents --keyword "control" --commands "open_standard convert_8bit measure"
-
-  # Process with ROI and save processed files
-  python main.py /path/to/documents --keyword "treatment" --apply-roi --save-processed --suffix "analyzed"
-
-  # Show available commands
-  python main.py --list-commands
-
-  # Validate setup
-  python main.py --validate
-        """
+  # Combine commands, ROI application, and custom measurement prefix
+  python main.py /data/study --keyword "4MU,Control" --apply-roi --commands "open_standard measure" \
+      --measurement-prefix studyA --save-processed --suffix analyzed
+        """,
     )
-    
-    parser.add_argument("base_path", nargs="?", help="Base directory containing documents")
-    parser.add_argument("--keyword", help="Keyword to search for in document names")
-    parser.add_argument("--secondary-filter", help="Secondary filter (e.g., 'MIP', 'processed')")
-    parser.add_argument("--commands", help="Space-separated macro commands to apply")
-    parser.add_argument("--fiji-path", help="Path to Fiji executable (auto-detected if not provided)")
-    parser.add_argument("--apply-roi", action="store_true", help="Apply ROI processing if ROI files found")
-    parser.add_argument("--save-processed", action="store_true", help="Save processed files to separate directory")
-    parser.add_argument("--suffix", default="processed", help="Suffix for processed files (default: 'processed')")
-    parser.add_argument("--measurements-folder", default="Measurements", help="Folder for measurements (default: 'Measurements')")
-    parser.add_argument("--processed-folder", default="Processed_Files", help="Folder for processed files (default: 'Processed_Files')")
-    parser.add_argument("--verbose", action="store_true", help="Enable verbose output")
-    parser.add_argument("--validate", action="store_true", help="Validate setup and exit")
-    parser.add_argument("--list-commands", action="store_true", help="List all available commands and exit")
-    
+
+    parser.add_argument("base_path", nargs="?", help="Base directory containing the documents to scan")
+    parser.add_argument(
+        "--keyword",
+        "--keywords",
+        dest="keyword",
+        action="append",
+        help="Keyword or comma-separated list of keywords to match in filenames. Repeat for additional entries.",
+    )
+    parser.add_argument(
+        "--secondary-filter",
+        help="Optional secondary substring that must also be present (e.g. 'MIP').",
+    )
+    parser.add_argument(
+        "--commands",
+        help="Space-separated macro commands to run instead of the default open/measure/save workflow.",
+    )
+    parser.add_argument("--fiji-path", help="Path to the Fiji executable (auto-detected if omitted).")
+    parser.add_argument("--apply-roi", action="store_true", help="Apply ROI files when found using the configured templates.")
+    parser.add_argument("--save-processed", action="store_true", help="Save processed images using the configured suffix.")
+    parser.add_argument(
+        "--suffix",
+        default="processed",
+        help="Suffix appended to processed filenames (default: 'processed').",
+    )
+    parser.add_argument(
+        "--measurements-folder",
+        default="Measurements",
+        help="Folder name (relative to the base path) that stores measurement exports.",
+    )
+    parser.add_argument(
+        "--processed-folder",
+        default="Processed_Files",
+        help="Folder name (relative to the base path) where processed files are saved.",
+    )
+    parser.add_argument(
+        "--measurement-prefix",
+        default="measurements_summary",
+        help="Prefix for generated measurement summary files (CSV and JSON).",
+    )
+    parser.add_argument(
+        "--roi-template",
+        action="append",
+        help="ROI filename template using {name} as the placeholder for the document stem. Repeat or comma-separate values.",
+    )
+    parser.add_argument("--verbose", action="store_true", help="Print verbose processing information.")
+    parser.add_argument("--validate", action="store_true", help="Validate the Fiji setup and exit.")
+    parser.add_argument("--list-commands", action="store_true", help="List all available macro commands and exit.")
+
     args = parser.parse_args()
-    
+
     try:
         if args.list_commands:
-            # Show commands without initializing processor (no Fiji validation needed)
-            from core_processor import CommandLibrary
             library = CommandLibrary()
             commands = library.list_commands()
-            
+
             print("Available Commands:")
             print("=" * 50)
-            for cmd_name, cmd_info in commands.items():
-                print(f"\n{cmd_name}")
-                print(f"  Description: {cmd_info['description']}")
-                if cmd_info.get('parameters'):
-                    print(f"  Parameters: {cmd_info['parameters']}")
-                print(f"  Example: {cmd_info['example']}")
+            for name, info in commands.items():
+                print(f"\n{name}")
+                print(f"  Description: {info['description']}")
+                if info.get("parameters"):
+                    print(f"  Parameters: {info['parameters']}")
+                print(f"  Example: {info['example']}")
             return 0
-        
-        # Initialize processor
+
         processor = CoreProcessor(fiji_path=args.fiji_path)
-        
+
         if args.validate:
             print("Validating setup...")
             validation = processor.validate_setup()
@@ -83,84 +123,97 @@ Examples:
             print(f"Available commands: {validation['available_commands']}")
             print(f"Supported extensions: {validation['supported_extensions']}")
             return 0
-        
-        if not args.base_path or not args.keyword:
-            print("Error: Both --base_path and --keyword are required for processing")
-            print("Use --help for usage information")
+
+        if not args.base_path:
+            print("Error: base_path is required when not running in --list-commands or --validate mode.")
             return 1
-        
-        # Create processing options
+
+        if not args.keyword:
+            print("Error: Provide at least one --keyword entry (comma-separated values are accepted).")
+            return 1
+
+        base_path = os.path.abspath(os.path.expanduser(args.base_path))
+
+        parsed_keywords = _collect_keywords(args.keyword)
+        if not parsed_keywords:
+            print("Error: No usable keyword values were provided.")
+            return 1
+        keyword_input: Union[List[str], str]
+        if len(parsed_keywords) == 1:
+            keyword_input = parsed_keywords[0]
+        else:
+            keyword_input = parsed_keywords
+
+        roi_templates: Optional[List[str]] = None
+        if args.roi_template:
+            parsed_templates = _collect_roi_templates(args.roi_template)
+            roi_templates = parsed_templates or None
+
         options = ProcessingOptions(
             apply_roi=args.apply_roi,
             save_processed_files=args.save_processed,
             custom_suffix=args.suffix,
             secondary_filter=args.secondary_filter,
             measurements_folder=args.measurements_folder,
-            processed_folder=args.processed_folder
+            processed_folder=args.processed_folder,
+            measurement_summary_prefix=args.measurement_prefix,
+            roi_search_templates=roi_templates,
         )
-        
-        # Process documents
+
         result = processor.process_documents(
-            base_path=args.base_path,
-            keyword=args.keyword,
+            base_path=base_path,
+            keyword=keyword_input,
             macro_commands=args.commands,
             options=options,
-            verbose=args.verbose
+            verbose=args.verbose,
         )
-        
-        # Print results
+
         if result["success"]:
-            print(f"\n✅ Processing completed successfully!")
+            print("\n✅ Processing completed successfully!")
+            if result.get("searched_keywords"):
+                print("Keywords:", ", ".join(result["searched_keywords"]))
             print(f"Processed documents: {len(result['processed_documents'])}")
-            print(f"Measurements: {len(result['measurements'])}")
-            if result.get('failed_documents'):
-                print(f"Failed documents: {len(result['failed_documents'])}")
-                for failed in result['failed_documents']:
-                    print(f"  - {failed['filename']}: {failed['error']}")
+            if args.verbose and result["processed_documents"]:
+                for entry in result["processed_documents"]:
+                    match_note = (
+                        f" (matched keyword: {entry['matched_keyword']})"
+                        if entry.get("matched_keyword")
+                        else ""
+                    )
+                    secondary_note = (
+                        f" [secondary: {entry['secondary_key']}]"
+                        if entry.get("secondary_key")
+                        else ""
+                    )
+                    print(f"  - {entry['filename']}{match_note}{secondary_note}")
+            if result["measurements"]:
+                print(f"Measurements recorded for {len(result['measurements'])} document(s).")
+            if result["failed_documents"]:
+                print(f"Completed with {len(result['failed_documents'])} warning(s):")
+                for failed in result["failed_documents"]:
+                    match_note = (
+                        f" (matched keyword: {failed['matched_keyword']})"
+                        if failed.get("matched_keyword")
+                        else ""
+                    )
+                    secondary_note = (
+                        f" [secondary: {failed['secondary_key']}]"
+                        if failed.get("secondary_key")
+                        else ""
+                    )
+                    print(f"  - {failed['filename']}{match_note}{secondary_note}: {failed['error']}")
         else:
             print(f"\n❌ Processing failed: {result['error']}")
+            if result.get("searched_keywords"):
+                print("Keywords:", ", ".join(result["searched_keywords"]))
             return 1
-            
-    except Exception as e:
-        print(f"Error: {str(e)}")
+
+    except Exception as exc:  # pragma: no cover - defensive CLI fallback
+        print(f"Error: {exc}")
         return 1
-    
+
     return 0
 
 
-def process_images_with_fiji(base_path: str, 
-                           fiji_path: Optional[str] = None,
-                           group_keywords: Optional[List[str]] = None, 
-                           mip_only: bool = False,
-                           custom_macro: Optional[str] = None,
-                           simple_commands: Optional[str] = None) -> dict:
-    """
-    Legacy function for backward compatibility.
-    
-    Args:
-        base_path: Base directory containing images
-        fiji_path: Path to Fiji executable
-        group_keywords: List of group keywords to search for
-        mip_only: Whether to process only MIP files
-        custom_macro: Custom macro code
-        simple_commands: Space-separated simple command names
-        
-    Returns:
-        Dictionary with processing results
-    """
-    processor = FijiProcessor(fiji_path=fiji_path)
-    
-    return processor.process_images(
-        base_path=base_path,
-        group_keywords=group_keywords,
-        mip_only=mip_only,
-        custom_macro=custom_macro,
-        simple_commands=simple_commands,
-        verbose=True
-    )
-
-
 if __name__ == "__main__":
-    exit(main())
-
-
+    raise SystemExit(main())

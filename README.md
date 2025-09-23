@@ -1,410 +1,195 @@
 # Fiji Document Processor
 
-A database-driven document processing tool for Fiji/ImageJ that focuses on keyword-based document selection, measurement collection, and optional processing features. Designed for simplicity and flexibility with comprehensive command library support.
+A single, keyword-driven automation pipeline for Fiji/ImageJ. Provide one or more
+keywords, optionally constrain matches with a secondary filter, and the processor
+will walk your directory tree, open each matching file in Fiji, run your macro
+commands, record measurements, and (optionally) export processed images.
 
-## Core Philosophy
+The focus is on making every name and key configurable from the command line so
+it stays approachable for quick runs while remaining flexible for custom
+workflows.
 
-**Default Behavior**: Find documents by keyword → Apply macro → Save measurements  
-**Everything Else**: Optional and customizable
+## Requirements
 
-## Key Features
+- Python 3.8 or later
+- A local Fiji/ImageJ installation (the tool attempts auto-discovery, but you
+  can always pass `--fiji-path`)
 
-- **Database-driven processing**: Find and process documents based on keywords
-- **Automatic measurements**: Default behavior saves measurements to CSV/JSON
-- **Optional features**: ROI processing, file saving, custom suffixes, secondary filtering
-- **Command library**: 25+ pre-built commands with detailed documentation
-- **Cross-platform**: Works on Windows, macOS, and Linux
-- **Flexible filtering**: Primary keyword + optional secondary filter (e.g., "MIP")
-- **Bio-Formats support**: Handles .tif, .ims, .czi, .nd2, and other formats
+Install the Python dependencies with:
 
-## Installation
-
-### From Source
-
-1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/fiji-automated-analysis.git
-cd fiji-automated-analysis
+pip install -r requirements.txt
 ```
 
-2. Install the package:
+For editable installs (optional):
+
 ```bash
 pip install -e .
 ```
 
-### Requirements
+## Expected directory layout
 
-- Python 3.7 or higher
-- Fiji/ImageJ installed on your system
+Point the processor at the root directory that contains your study folders.
+The tool will recurse through every subdirectory when searching for filenames
+that contain the configured keywords.
 
-## Quick Start
-
-### Basic Usage (Default: Find → Measure → Save)
-
-```bash
-# Find documents with keyword "experimental" and measure them
-python main.py /path/to/documents --keyword "experimental"
-
-# Find documents with secondary filter (e.g., MIP files)
-python main.py /path/to/documents --keyword "experimental" --secondary-filter "MIP"
-
-# Apply custom commands
-python main.py /path/to/documents --keyword "control" --commands "open_standard convert_8bit measure"
+```
+/data/study
+├── Experiment_A
+│   ├── 01_Control_MIP.tif
+│   ├── 01_Control_MIP.roi
+│   ├── 02_4MU_pre.tif
+│   └── 02_4MU_pre.zip
+└── Experiment_B
+    ├── 03_Control_post.tif
+    ├── 03_Control_post_RoiSet.zip
+    └── 04_4MU_followup.tif
 ```
 
-### Optional Features
+- **Keywords** are matched against the filename (e.g., `4MU`, `Control`).
+- A **secondary filter** further constrains matches (e.g., only files containing
+  `MIP`).
+- **ROI templates** determine how ROI filenames are derived from the image stem.
+  Defaults cover `image.roi`, `image.zip`, and `RoiSet_image.zip`, but you can
+  supply your own patterns with `{name}` acting as the filename placeholder.
+
+## Command-line usage
 
 ```bash
-# Process with ROI and save processed files
-python main.py /path/to/documents --keyword "treatment" --apply-roi --save-processed --suffix "analyzed"
+python main.py BASE_PATH --keyword KEYWORD [options]
+```
 
-# Custom output folders
-python main.py /path/to/documents --keyword "data" --measurements-folder "Results" --processed-folder "Output"
+### Common examples
 
-# Show all available commands
+```bash
+# Process every file whose name contains "4MU"
+python main.py /data/study --keyword 4MU
+
+# Process files that contain either "4MU" or "Control"
+python main.py /data/study --keyword 4MU --keyword Control
+
+# Same as above using a single comma-separated entry
+python main.py /data/study --keyword "4MU,Control"
+
+# Require both a primary keyword and a secondary filter (e.g. only MIP files)
+python main.py /data/study --keyword 4MU --secondary-filter MIP
+
+# Apply ROIs and use a custom ROI template
+python main.py /data/study --keyword Control --apply-roi \
+    --roi-template "{name}_ROI.zip"
+
+# Save processed images with a custom suffix and measurement summary prefix
+python main.py /data/study --keyword 4MU --save-processed --suffix analyzed \
+    --measurement-prefix studyA
+
+# Show every built-in macro command
 python main.py --list-commands
 
-# Validate setup
+# Verify that Fiji is reachable and inspect supported extensions
 python main.py --validate
 ```
 
-## Configuration
+### Option reference
 
-### Group Configuration
+| Option | Description |
+| --- | --- |
+| `--keyword` / `--keywords` | Primary keyword(s). Repeat the flag or provide a comma-separated list. |
+| `--secondary-filter` | Additional substring that must appear in the filename. |
+| `--commands` | Space-separated macro commands (defaults to `open_standard measure save_csv quit`). |
+| `--apply-roi` | Load ROI files that match the configured templates. |
+| `--roi-template` | Override ROI templates. Use `{name}` where the base filename should appear. |
+| `--save-processed` | Export processed images to `<base_path>/<processed_folder>`. |
+| `--suffix` | Suffix for processed filenames (default: `processed`). |
+| `--measurements-folder` | Directory (under the base path) for measurement exports. |
+| `--processed-folder` | Directory (under the base path) for processed images. |
+| `--measurement-prefix` | Prefix used when saving CSV/JSON measurement summaries. |
+| `--fiji-path` | Explicit path to the Fiji executable. |
+| `--verbose` | Print detailed progress, including the matched keyword for each file. |
 
-You can customize group names and subject mappings:
+## Programmatic use
 
-```python
-from config import GroupConfig
-
-# Custom group configuration
-group_config = GroupConfig(
-    groups={
-        "Treatment": "Drug_A",
-        "Control": "Vehicle",
-        "Positive": "Reference"
-    }
-)
-```
-
-### Processing Configuration
-
-Customize image processing parameters:
-
-```python
-from config import ProcessingConfig
-
-# Custom processing configuration
-processing_config = ProcessingConfig(
-    rolling_radius=50,        # Background subtraction radius
-    median_radius=3,          # Median filter radius
-    saturated_pixels=0.4,     # Contrast enhancement
-    convert_to_8bit=True,     # Convert to 8-bit
-    duplicate_channels=1,     # Number of channels to duplicate
-    duplicate_slices="1-end", # Slices to duplicate
-    duplicate_frames="1-end"  # Frames to duplicate
-)
-```
-
-### File Configuration
-
-Customize supported file types and patterns:
+You can embed the processor in your own scripts to run highly customized
+pipelines.
 
 ```python
+from core_processor import CoreProcessor, ProcessingOptions
 from config import FileConfig
 
-# Custom file configuration
 file_config = FileConfig(
-    supported_extensions=['.tif', '.ims', '.czi', '.nd2'],
-    mip_keywords=['_MIP_', '_MIP.tif', '_MIP.ims'],
-    roi_patterns={
-        'roiset': 'RoiSet_{cut_number}.zip',
-        'single_roi': 'roi_{cut_number}.roi',
-        'inverted_roi': 'roi_{cut_number}_inverted.roi'
-    }
+    supported_extensions=(".tif", ".tiff", ".czi"),
+    roi_search_templates=("{name}.zip", "{name}_ROI.zip"),
+)
+
+processor = CoreProcessor(
+    fiji_path="/Applications/Fiji.app/Contents/MacOS/ImageJ-macosx",
+    file_config=file_config,
+)
+
+options = ProcessingOptions(
+    apply_roi=True,
+    save_processed_files=True,
+    custom_suffix="analyzed",
+    measurements_folder="Measurements",
+    processed_folder="Processed",
+    measurement_summary_prefix="studyA",
+    roi_search_templates=("{name}.zip", "RoiSet_{name}.zip"),
+)
+
+result = processor.process_documents(
+    base_path="/data/study",
+    keyword=["4MU", "Control"],
+    macro_commands="open_standard measure save_csv quit",
+    options=options,
+    verbose=True,
 )
 ```
 
-## Programming Interface
+Results include the list of processed documents, failed documents (with error
+messages), measurement data grouped by file, and the keywords that were used for
+the search.
 
-### Using the FijiProcessor Class
+## Examples directory
 
-```python
-from fiji_processor import FijiProcessor
-from config import ProcessingConfig, FileConfig, GroupConfig
+The `examples` folder contains a miniature dataset that mirrors the directory
+structure shown above:
 
-# Initialize processor with custom configuration
-processor = FijiProcessor(
-    fiji_path="/path/to/fiji",  # Optional, auto-detected if None
-    processing_config=ProcessingConfig(),
-    file_config=FileConfig(),
-    group_config=GroupConfig()
-)
-
-# Process images
-result = processor.process_images(
-    base_path="/path/to/images",
-    group_keywords=["Experimental", "Control"],
-    mip_only=False,
-    verbose=True
-)
-
-# Process ROIs
-roi_result = processor.process_rois(
-    base_path="/path/to/images",
-    group_keywords=["Experimental", "Control"],
-    roi_name_pattern="roi_cut"
-)
-
-# Check results
-if result["success"]:
-    print(f"Processed {len(result['processed_files'])} files")
-else:
-    print(f"Error: {result['error']}")
+```
+examples/sample_documents/
+├── Experiment_A
+│   ├── 01_Control_MIP.tif
+│   ├── 01_Control_MIP.roi
+│   ├── 02_4MU_pre.tif
+│   └── 02_4MU_pre.zip
+├── Experiment_B
+│   ├── 03_Control_post.tif
+│   ├── 03_Control_post_RoiSet.zip
+│   └── 04_4MU_followup.tif
+└── README.md
 ```
 
-### Using Custom Macros
+Use it as a reference for how filenames map to keywords, secondary filters, and
+ROI templates. The accompanying `README.md` inside the directory includes
+suggested command invocations you can adapt for your own studies.
 
-```python
-# Custom macro code
-custom_macro = """
-open("{input_path}");
-run("8-bit");
-run("Gaussian Blur...", "sigma=2");
-saveAs("Tiff", "{output_path}");
-"""
-
-# Process with custom macro
-result = processor.process_images(
-    base_path="/path/to/images",
-    custom_macro=custom_macro
-)
-```
-
-### Using Simple Commands
-
-```python
-# Simple command sequence
-simple_commands = "open_standard convert_8bit subtract_background save_tiff"
-
-result = processor.process_images(
-    base_path="/path/to/images",
-    simple_commands=simple_commands
-)
-```
-
-## Command Library
-
-The tool includes a comprehensive library of 25+ pre-built commands. Use `python main.py --list-commands` to see all available commands.
-
-### File Operations
-
-| Command | Description | Parameters | Example |
-|---------|-------------|------------|---------|
-| `open_standard` | Open image with standard ImageJ method | `input_path` | `open_standard` |
-| `open_bioformats` | Open image using Bio-Formats importer | `input_path` | `open_bioformats` |
-| `save_tiff` | Save current image as TIFF | `output_path` | `save_tiff` |
-| `save_csv` | Save measurements as CSV | `output_path` | `save_csv` |
-
-### Image Processing
-
-| Command | Description | Parameters | Example |
-|---------|-------------|------------|---------|
-| `convert_8bit` | Convert image to 8-bit | None | `convert_8bit` |
-| `convert_16bit` | Convert image to 16-bit | None | `convert_16bit` |
-| `subtract_background` | Subtract background using rolling ball | `radius` (default: 30) | `subtract_background radius=50` |
-| `median_filter` | Apply median filter | `radius` (default: 2) | `median_filter radius=3` |
-| `gaussian_blur` | Apply Gaussian blur | `sigma` (default: 2.0) | `gaussian_blur sigma=1.5` |
-| `enhance_contrast` | Enhance contrast using histogram equalization | `saturated` (default: 0.35) | `enhance_contrast saturated=0.4` |
-| `threshold` | Apply threshold | `method` (default: 'Default') | `threshold method='Otsu'` |
-
-### Measurements
-
-| Command | Description | Parameters | Example |
-|---------|-------------|------------|---------|
-| `measure` | Measure current selection or entire image | `measurements` (optional) | `measure` |
-| `set_measurements` | Set which measurements to record | `measurements` | `set_measurements measurements='area,mean,std'` |
-| `clear_measurements` | Clear all measurements | None | `clear_measurements` |
-
-### ROI Operations
-
-| Command | Description | Parameters | Example |
-|---------|-------------|------------|---------|
-| `roi_manager_reset` | Reset ROI Manager | None | `roi_manager_reset` |
-| `roi_manager_open` | Open ROI file | `roi_path` | `roi_manager_open roi_path='/path/to/roi.zip'` |
-| `roi_manager_select` | Select ROI by index | `index` | `roi_manager_select index=0` |
-| `roi_manager_measure` | Measure all ROIs in manager | None | `roi_manager_measure` |
-| `make_inverse` | Create inverse of current selection | None | `make_inverse` |
-| `roi_manager_add` | Add current selection to ROI Manager | None | `roi_manager_add` |
-| `roi_manager_save` | Save ROIs to file | `roi_path` | `roi_manager_save roi_path='/path/to/save.zip'` |
-
-### Utility Operations
-
-| Command | Description | Parameters | Example |
-|---------|-------------|------------|---------|
-| `duplicate` | Duplicate current image | `title`, `channels`, `slices`, `frames` | `duplicate title='Copy' channels=1` |
-| `close_all` | Close all open windows | None | `close_all` |
-| `quit` | Quit ImageJ/Fiji | None | `quit` |
-
-### Display Operations
-
-| Command | Description | Parameters | Example |
-|---------|-------------|------------|---------|
-| `set_option_show_all` | Set 'Show All' option to false | None | `set_option_show_all` |
-| `remove_overlay` | Remove any overlays | None | `remove_overlay` |
-| `roi_manager_show_none` | Hide all ROIs | None | `roi_manager_show_none` |
-| `roi_manager_deselect` | Deselect all ROIs | None | `roi_manager_deselect` |
-
-### Command Usage Examples
+To run the dataset through the processor without touching the CLI, execute the
+example script:
 
 ```bash
-# Basic measurement workflow
-python main.py /path/to/docs --keyword "data" --commands "open_standard measure save_csv"
-
-# Image processing with measurements
-python main.py /path/to/docs --keyword "images" --commands "open_standard convert_8bit subtract_background measure"
-
-# ROI-based processing
-python main.py /path/to/docs --keyword "roi_data" --commands "open_standard roi_manager_open roi_manager_measure" --apply-roi
-
-# Custom parameters
-python main.py /path/to/docs --keyword "processed" --commands "open_standard subtract_background radius=50 enhance_contrast saturated=0.4 measure"
+python examples/run_sample_processing.py
 ```
 
-## File Structure
+The script builds a `CoreProcessor` instance with custom file and processing
+options, searches for the keywords `4MU` and `Control`, applies ROIs, and prints
+a summary of the run.
 
-```
-fiji-automated-analysis/
-├── main.py                 # Main entry point
-├── fiji_processor.py      # Core processor class
-├── config.py              # Configuration classes
-├── utils/
-│   ├── general/
-│   │   ├── fiji_utils.py      # Fiji utilities
-│   │   ├── file_utils.py      # File processing utilities
-│   │   ├── macro_builder.py   # Macro building system
-│   │   └── macros_operation.py # Macro execution
-│   └── processing/
-│       └── roi_processing.py  # ROI processing (legacy)
-├── examples/              # Example scripts
-├── tests/                 # Test files
-├── setup.py              # Package setup
-├── requirements.txt      # Dependencies
-└── README.md            # This file
-```
+## Running the built-in smoke tests
 
-## Examples
-
-### Example 1: Basic Image Processing
-
-```python
-from fiji_processor import FijiProcessor
-
-# Initialize processor
-processor = FijiProcessor()
-
-# Process images with default settings
-result = processor.process_images("/path/to/images")
-
-print(f"Success: {result['success']}")
-print(f"Processed files: {len(result['processed_files'])}")
-```
-
-### Example 2: Custom Processing Pipeline
-
-```python
-from fiji_processor import FijiProcessor
-from config import ProcessingConfig
-
-# Custom processing configuration
-config = ProcessingConfig(
-    rolling_radius=50,
-    median_radius=3,
-    saturated_pixels=0.4
-)
-
-# Initialize processor with custom config
-processor = FijiProcessor(processing_config=config)
-
-# Process with custom settings
-result = processor.process_images(
-    base_path="/path/to/images",
-    group_keywords=["Treatment", "Control"],
-    mip_only=True
-)
-```
-
-### Example 3: ROI Processing
-
-```python
-from fiji_processor import FijiProcessor
-
-# Initialize processor
-processor = FijiProcessor()
-
-# Process ROIs
-result = processor.process_rois(
-    base_path="/path/to/images",
-    group_keywords=["Experimental", "Control"]
-)
-
-if result["success"]:
-    print("ROI processing completed successfully")
-else:
-    print(f"ROI processing failed: {result['error']}")
-```
-
-## Troubleshooting
-
-### Fiji Not Found
-
-If Fiji is not automatically detected:
-
-1. Install Fiji from https://fiji.sc/
-2. Provide the path manually:
-   ```bash
-   python main.py /path/to/images --fiji-path /path/to/fiji
-   ```
-
-### Platform-Specific Issues
-
-- **Windows**: Ensure Fiji is in your PATH or provide the full path
-- **macOS**: Fiji is typically found in `/Applications/Fiji.app/`
-- **Linux**: Install Fiji in `/opt/fiji/` or provide the path
-
-### Validation
-
-Check your setup:
+Two lightweight scripts ensure the environment is set up correctly:
 
 ```bash
-python main.py /path/to/images --validate
+python test_setup.py
+python test_core_setup.py
 ```
 
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests
-5. Submit a pull request
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## Support
-
-For issues and questions:
-- Create an issue on GitHub
-- Check the documentation
-- Review the examples
-
-## Changelog
-
-### Version 1.0.0
-- Initial release
-- Cross-platform support
-- Flexible configuration system
-- Multiple macro options
-- ROI processing capabilities
-- Comprehensive documentation
+They focus on import checks, helper utilities, and validating that the processor
+handles both single and multiple keywords.

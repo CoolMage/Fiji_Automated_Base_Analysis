@@ -38,14 +38,13 @@ fi
 # If no arguments provided, show help
 if [ $# -eq 0 ]; then
     echo ""
-    echo "Usage: $0 [path_to_images] [options]"
+    echo "Usage: $0 [path_to_documents] [options]"
     echo ""
     echo "Examples:"
-    echo "  $0 /path/to/images"
-    echo "  $0 /path/to/images --mip-only"
-    echo "  $0 /path/to/images --groups \"Experimental\" \"Control\""
-    echo "  $0 /path/to/images --process-rois"
-    echo "  $0 /path/to/images --validate"
+    echo "  $0 /path/to/documents --keyword 4MU"
+    echo "  $0 /path/to/documents --keyword 4MU --keyword Control --apply-roi"
+    echo "  $0 /path/to/documents --keyword Control --commands \"open_standard measure quit\""
+    echo "  $0 /path/to/documents --validate"
     echo ""
     exit 0
 fi
