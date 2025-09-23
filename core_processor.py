@@ -551,7 +551,7 @@ class CoreProcessor:
             image_data.output_path = convert_path_for_fiji(
                 os.path.join(target_dir, output_filename)
             )
-        
+
         # Build macro
         if macro_commands is None:
             # Default: open, measure, save measurements, quit

@@ -17,7 +17,7 @@ from core_processor import CoreProcessor, ProcessingOptions
 def build_processor() -> CoreProcessor:
     """Create a CoreProcessor with example file configuration overrides."""
     file_config = FileConfig(
-        supported_extensions=(".tif", ".tiff"),
+        supported_extensions=(".tif", ".tiff", ".ims", ".czi"),
         roi_search_templates=("{name}.roi", "{name}.zip", "RoiSet_{name}.zip"),
     )
 
@@ -29,8 +29,8 @@ def build_processor() -> CoreProcessor:
 def build_options() -> ProcessingOptions:
     """Configure processing options that showcase common customizations."""
     return ProcessingOptions(
-        apply_roi=True,
-        save_processed_files=False,
+        apply_roi=False,
+        save_processed_files=True,
         custom_suffix="analyzed",
         measurements_folder="Measurements",
         processed_folder="Processed",
@@ -41,12 +41,13 @@ def build_options() -> ProcessingOptions:
 
 
 def main() -> None:
-    base_path = Path(__file__).parent / "sample_documents"
+    #base_path = Path(__file__).parent / "sample_documents"
+    base_path = "/Users/savvaarutsev/Documents/Data_Test/Detile_astrocytes"
     processor = build_processor()
     options = build_options()
 
     macro_commands = [
-        "open_standard",
+        "open_bioformats",
         "measure",
         "save_csv",
         "quit",
