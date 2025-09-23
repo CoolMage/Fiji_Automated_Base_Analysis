@@ -154,28 +154,27 @@ Results include the list of processed documents, failed documents (with error
 messages), measurement data grouped by file, and the keywords that were used for
 the search.
 
-## Examples directory
+## Example of using your own macro
 
-The `examples` folder contains a miniature dataset that mirrors the directory
-structure shown above:
+Option A: inline macro lines
 
-```
-examples/sample_documents/
-├── Experiment_A
-│   ├── 01_Control_MIP.tif
-│   ├── 01_Control_MIP.roi
-│   ├── 02_4MU_pre.tif
-│   └── 02_4MU_pre.zip
-├── Experiment_B
-│   ├── 03_Control_post.tif
-│   ├── 03_Control_post_RoiSet.zip
-│   └── 04_4MU_followup.tif
-└── README.md
+```bash
+macro_commands = [
+    'open("{input_path}");',
+    'run("Gaussian Blur...", "sigma=2");',
+    'saveAs("Tiff", "{output_path}");',
+    'run("Quit");',  # or omit—it will be appended automatically
+]
 ```
 
-Use it as a reference for how filenames map to keywords, secondary filters, and
-ROI templates. The accompanying `README.md` inside the directory includes
-suggested command invocations you can adapt for your own studies.
+Option B: load an existing .ijm file and split it into lines
+
+```bash
+macro_commands = [
+    line for line in Path("my_macro.ijm").read_text().splitlines() if line.strip()
+]
+```
+
 
 ## Running the built-in smoke tests
 
