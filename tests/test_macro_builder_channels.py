@@ -1,3 +1,4 @@
+
 from core_processor import CoreProcessor
 from utils.general.macro_builder import ImageData, MacroBuilder, MacroCommand
 
@@ -83,3 +84,4 @@ def test_core_processor_substitution_preserves_channel_loops():
     assert 'Stack.setChannel(int(_channels_1[_channel_index_1]));' in substituted
     assert '{input_path}' not in substituted
     assert 'open("/data/input.tif");' in substituted
+
