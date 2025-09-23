@@ -1,11 +1,11 @@
-"""
-Cross-platform Fiji utilities for finding and running Fiji.
-"""
+"""Cross-platform Fiji utilities for finding and running Fiji."""
 
 import os
+import stat
 import subprocess
 import platform
 from typing import Optional, List
+
 from config import DEFAULT_FIJI_PATHS
 
 
@@ -89,37 +89,36 @@ def find_fiji(custom_paths: Optional[List[str]] = None) -> Optional[str]:
 
 
 def validate_fiji_path(fiji_path: str) -> bool:
-    """
-    Validate that the given path points to a working Fiji executable.
-    
+    """Validate that the given path points to a usable Fiji executable.
+
+    Validation is intentionally lightweight to avoid spawning a Fiji GUI
+    process.  We rely on filesystem checks rather than executing the binary.
+
     Args:
         fiji_path: Path to Fiji executable
-        
+
     Returns:
-        True if valid, False otherwise
+        True if the path looks like a valid executable, False otherwise
     """
-    if not os.path.isfile(fiji_path):
+
+    if not fiji_path:
         return False
-    
+
+    try:
+        file_stat = os.stat(fiji_path, follow_symlinks=True)
+    except OSError:
+        return False
+
+    if not stat.S_ISREG(file_stat.st_mode):
+        return False
+
+    if file_stat.st_size <= 0:
+        return False
+
     if not os.access(fiji_path, os.X_OK):
         return False
-    
-    # Try to run Fiji with version flag
-    try:
-        result = subprocess.run(
-            [fiji_path, "--version"],
-            capture_output=True,
-            text=True,
-            timeout=10
-        )
-        return result.returncode == 0
-    except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError):
-        # If version check fails, try a simpler validation
-        try:
-            # Just check if the file exists and is executable
-            return os.path.isfile(fiji_path) and os.access(fiji_path, os.X_OK)
-        except:
-            return False
+
+    return True
 
 
 def get_platform_info() -> dict:

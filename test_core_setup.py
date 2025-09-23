@@ -142,12 +142,25 @@ def test_core_processor():
     
     try:
         from core_processor import CoreProcessor
-        
+
+        # Ensure invalid paths are rejected before attempting auto-detection
+        invalid_path = "/invalid/path/to/fiji"
+        try:
+            CoreProcessor(fiji_path=invalid_path)
+            print("❌ CoreProcessor accepted an invalid Fiji path")
+            return False
+        except RuntimeError as invalid_error:
+            if "Invalid Fiji path" in str(invalid_error):
+                print("✅ CoreProcessor rejects invalid Fiji paths")
+            else:
+                print(f"❌ Unexpected error for invalid Fiji path: {invalid_error}")
+                return False
+
         # Try to initialize processor (may fail if Fiji not found)
         try:
             processor = CoreProcessor()
             print("✅ CoreProcessor initialized successfully")
-            
+
             # Test validation
             validation = processor.validate_setup()
             print(f"✅ Validation: fiji_valid={validation['fiji_valid']}")
