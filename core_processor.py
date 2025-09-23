@@ -8,7 +8,8 @@ import os
 import json
 import csv
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
-from dataclasses import dataclass
+from pathlib import Path
+from dataclasses import dataclass, asdict
 from datetime import datetime
 
 from config import FileConfig, ProcessingConfig
@@ -224,6 +225,7 @@ class CoreProcessor:
     Focuses on keyword-based processing with optional features.
     """
     
+
     def __init__(
         self,
         fiji_path: Optional[str] = None,
@@ -259,7 +261,6 @@ class CoreProcessor:
     @staticmethod
     def _normalize_keywords(keyword_input: Union[str, Sequence[str]]) -> Tuple[str, ...]:
         """Normalize keyword input into a tuple of unique, non-empty strings."""
-
         if isinstance(keyword_input, str):
             keywords = [keyword_input]
         else:
@@ -339,7 +340,7 @@ class CoreProcessor:
                     continue
 
                 # Check secondary filter if specified
-                if secondary_filter and secondary_filter not in file_lower:
+                if secondary_filter and secondary_filter.lower() not in file_lower:
                     continue
 
                 file_path = os.path.join(root, file)
@@ -353,7 +354,6 @@ class CoreProcessor:
                     except KeyError:
                         # Allow templates that use old-style formatting tokens
                         roi_candidate = os.path.join(root, template.replace("{name}", filename))
-
                     if os.path.exists(roi_candidate):
                         roi_path = roi_candidate
                         break

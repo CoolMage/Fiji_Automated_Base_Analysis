@@ -95,7 +95,6 @@ def main() -> int:
     parser.add_argument("--verbose", action="store_true", help="Print verbose processing information.")
     parser.add_argument("--validate", action="store_true", help="Validate the Fiji setup and exit.")
     parser.add_argument("--list-commands", action="store_true", help="List all available macro commands and exit.")
-
     args = parser.parse_args()
 
     try:
@@ -148,7 +147,7 @@ def main() -> int:
         if args.roi_template:
             parsed_templates = _collect_roi_templates(args.roi_template)
             roi_templates = parsed_templates or None
-
+            
         options = ProcessingOptions(
             apply_roi=args.apply_roi,
             save_processed_files=args.save_processed,
