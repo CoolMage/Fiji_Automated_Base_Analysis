@@ -7,12 +7,12 @@ All other features are optional and customizable.
 import os
 import json
 import csv
-from typing import List, Dict, Optional, Any, Union, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 from pathlib import Path
 from dataclasses import dataclass, asdict
 from datetime import datetime
 
-from config import ProcessingConfig, FileConfig, GroupConfig
+from config import FileConfig, ProcessingConfig
 from utils.general.fiji_utils import find_fiji, validate_fiji_path
 from utils.general.file_utils import normalize_path, convert_path_for_fiji, is_bioformats_file
 from utils.general.macro_builder import MacroBuilder, ImageData, MacroCommand
@@ -21,10 +21,11 @@ from utils.general.macros_operation import run_fiji_macro
 
 @dataclass
 class DocumentInfo:
-    """Information about a document to be processed."""
+    """Information about a document scheduled for processing."""
+
     file_path: str
     filename: str
-    keyword: Union[str, Sequence[str]]
+    keywords: Tuple[str, ...]
     matched_keyword: Optional[str] = None
     secondary_key: Optional[str] = None
     roi_path: Optional[str] = None
@@ -33,13 +34,16 @@ class DocumentInfo:
 
 @dataclass
 class ProcessingOptions:
-    """Optional processing options."""
+    """Runtime options that control how matching documents are handled."""
+
     apply_roi: bool = False
     save_processed_files: bool = False
     custom_suffix: str = "processed"
     secondary_filter: Optional[str] = None
     measurements_folder: str = "Measurements"
     processed_folder: str = "Processed_Files"
+    measurement_summary_prefix: str = "measurements_summary"
+    roi_search_templates: Optional[Sequence[str]] = None
 
 
 class CommandLibrary:
@@ -221,23 +225,23 @@ class CoreProcessor:
     Focuses on keyword-based processing with optional features.
     """
     
-    def __init__(self,
-                 fiji_path: Optional[str] = None,
-                 processing_config: Optional[ProcessingConfig] = None,
-                 file_config: Optional[FileConfig] = None,
-                 group_config: Optional[GroupConfig] = None):
+
+    def __init__(
+        self,
+        fiji_path: Optional[str] = None,
+        processing_config: Optional[ProcessingConfig] = None,
+        file_config: Optional[FileConfig] = None,
+    ):
         """
         Initialize the core processor.
         
         Args:
             fiji_path: Path to Fiji executable (auto-detected if None)
-            processing_config: Processing configuration
-            file_config: File configuration
-            group_config: Group configuration
+            processing_config: Processing configuration used by the macro builder
+            file_config: File configuration used for matching and ROI discovery
         """
         self.processing_config = processing_config or ProcessingConfig()
         self.file_config = file_config or FileConfig()
-        self.group_config = group_config or GroupConfig()
         
         # Find Fiji executable
         if fiji_path is None:
@@ -255,8 +259,8 @@ class CoreProcessor:
         print(f"Core Processor initialized with Fiji at: {self.fiji_path}")
 
     @staticmethod
-    def _normalize_keywords(keyword_input: Union[str, Sequence[str]]) -> List[str]:
-        """Normalize keyword input into a list of strings for matching."""
+    def _normalize_keywords(keyword_input: Union[str, Sequence[str]]) -> Tuple[str, ...]:
+        """Normalize keyword input into a tuple of unique, non-empty strings."""
         if isinstance(keyword_input, str):
             keywords = [keyword_input]
         else:
@@ -269,34 +273,57 @@ class CoreProcessor:
         for kw in keywords:
             if not isinstance(kw, str):
                 raise TypeError("All keywords must be strings")
-            normalized_keywords.append(kw)
 
-        return normalized_keywords
+            cleaned = kw.strip()
+            if cleaned:
+                normalized_keywords.append(cleaned)
+
+        if not normalized_keywords:
+            raise ValueError("keyword must contain at least one non-empty string")
+
+        # Preserve order while removing duplicates
+        ordered_unique = list(dict.fromkeys(normalized_keywords))
+        return tuple(ordered_unique)
 
     @staticmethod
     def _format_keywords(keyword_input: Union[str, Sequence[str]]) -> str:
         """Return a human-friendly representation of keyword input."""
+
         if isinstance(keyword_input, str):
             return keyword_input
-        return ", ".join(keyword_input)
 
-    def find_documents_by_keyword(self,
-                                  base_path: str,
-                                  keyword: Union[str, Sequence[str]],
-                                  secondary_filter: Optional[str] = None) -> List[DocumentInfo]:
+        return ", ".join(str(kw) for kw in keyword_input)
+
+    def find_documents_by_keyword(
+        self,
+        base_path: str,
+        keyword: Union[str, Sequence[str]],
+        options: Optional[ProcessingOptions] = None,
+    ) -> List[DocumentInfo]:
         """
         Find documents by keyword with optional secondary filtering.
 
         Args:
             base_path: Base directory to search
             keyword: Primary keyword or sequence of keywords to search for
-            secondary_filter: Optional secondary filter (e.g., "MIP", "processed", etc.)
+            options: Processing options that influence filtering and ROI lookup
 
         Returns:
             List of DocumentInfo objects
         """
-        keyword_list = self._normalize_keywords(keyword)
-        keyword_pairs = [(kw, kw.lower()) for kw in keyword_list]
+        keyword_tuple = self._normalize_keywords(keyword)
+        keyword_pairs = [(kw, kw.lower()) for kw in keyword_tuple]
+        search_options = options or ProcessingOptions()
+        secondary_filter = (
+            search_options.secondary_filter.lower()
+            if search_options.secondary_filter
+            else None
+        )
+        roi_templates = list(
+            search_options.roi_search_templates
+            if search_options.roi_search_templates
+            else self.file_config.roi_search_templates
+        )
         documents: List[DocumentInfo] = []
 
         # Search for files with the keyword
@@ -321,32 +348,30 @@ class CoreProcessor:
 
                 # Look for associated ROI file
                 roi_path = None
-                roi_candidates = [
-                    os.path.join(root, f"{filename}.roi"),
-                    os.path.join(root, f"{filename}.zip"),
-                    os.path.join(root, f"RoiSet_{filename}.zip")
-                ]
-
-                for roi_candidate in roi_candidates:
+                for template in roi_templates:
+                    try:
+                        roi_candidate = os.path.join(root, template.format(name=filename))
+                    except KeyError:
+                        # Allow templates that use old-style formatting tokens
+                        roi_candidate = os.path.join(root, template.replace("{name}", filename))
                     if os.path.exists(roi_candidate):
                         roi_path = roi_candidate
                         break
 
                 # Extract secondary key if present
                 secondary_key = None
-                if secondary_filter:
-                    # Try to extract the secondary key from filename
+                if secondary_filter and search_options.secondary_filter:
                     for ext in self.file_config.supported_extensions:
                         if file_lower.endswith(ext.lower()):
-                            base_name = file[:-len(ext)]
-                            if secondary_filter.lower() in base_name.lower():
-                                secondary_key = secondary_filter
+                            base_name = file[: -len(ext)] if ext else file
+                            if secondary_filter in base_name.lower():
+                                secondary_key = search_options.secondary_filter
                                 break
 
                 documents.append(DocumentInfo(
                     file_path=normalize_path(file_path),
                     filename=filename,
-                    keyword=keyword,
+                    keywords=keyword_tuple,
                     matched_keyword=matched_keyword,
                     secondary_key=secondary_key,
                     roi_path=roi_path
@@ -354,12 +379,14 @@ class CoreProcessor:
 
         return documents
 
-    def process_documents(self,
-                         base_path: str,
-                         keyword: Union[str, Sequence[str]],
-                         macro_commands: Union[str, List[str], None] = None,
-                         options: Optional[ProcessingOptions] = None,
-                         verbose: bool = True) -> Dict[str, Any]:
+    def process_documents(
+        self,
+        base_path: str,
+        keyword: Union[str, Sequence[str]],
+        macro_commands: Union[str, List[str], None] = None,
+        options: Optional[ProcessingOptions] = None,
+        verbose: bool = True,
+    ) -> Dict[str, Any]:
         """
         Process documents by keyword with specified macro commands.
         
@@ -375,61 +402,98 @@ class CoreProcessor:
         """
         if options is None:
             options = ProcessingOptions()
-        
+
+        try:
+            normalized_keywords = self._normalize_keywords(keyword)
+        except (TypeError, ValueError) as exc:
+            return {
+                "success": False,
+                "error": str(exc),
+                "processed_documents": [],
+                "failed_documents": [],
+                "measurements": [],
+                "searched_keywords": [],
+            }
+
         # Find documents
         documents = self.find_documents_by_keyword(
             base_path,
-            keyword,
-            options.secondary_filter
+            normalized_keywords,
+            options,
         )
 
         if not documents:
             return {
                 "success": False,
-                "error": f"No documents found with keyword(s): {self._format_keywords(keyword)}",
+                "error": f"No documents found with keyword(s): {self._format_keywords(normalized_keywords)}",
                 "processed_documents": [],
                 "failed_documents": [],
-                "measurements": []
+                "measurements": [],
+                "searched_keywords": list(normalized_keywords),
             }
 
         if verbose:
-            keyword_display = self._format_keywords(keyword)
+            keyword_display = self._format_keywords(normalized_keywords)
             print(f"Found {len(documents)} documents matching keyword(s): {keyword_display}")
             if options.secondary_filter:
                 print(f"Secondary filter: '{options.secondary_filter}'")
-        
+
         results = {
             "success": True,
             "processed_documents": [],
             "failed_documents": [],
-            "measurements": []
+            "measurements": [],
+            "searched_keywords": list(normalized_keywords),
         }
         
         # Create output directories
         measurements_dir = os.path.join(base_path, options.measurements_folder)
+        processed_dir: Optional[str] = None
         if options.save_processed_files:
             processed_dir = os.path.join(base_path, options.processed_folder)
             os.makedirs(processed_dir, exist_ok=True)
-        
+
         os.makedirs(measurements_dir, exist_ok=True)
-        
+
         # Process each document
         for doc in documents:
             try:
-                result = self._process_single_document(doc, macro_commands, options, verbose)
-                
+                result = self._process_single_document(
+                    doc,
+                    macro_commands,
+                    options,
+                    verbose,
+                    processed_dir,
+                )
+
                 if result["success"]:
-                    results["processed_documents"].append(doc.filename)
-                    if result.get("measurements"):
-                        results["measurements"].append({
+                    doc.measurements = result.get("measurements") or {}
+                    results["processed_documents"].append(
+                        {
                             "filename": doc.filename,
-                            "measurements": result["measurements"]
-                        })
+                            "matched_keyword": doc.matched_keyword,
+                            "full_path": doc.file_path,
+                            "secondary_key": doc.secondary_key,
+                        }
+                    )
+                    if doc.measurements:
+                        results["measurements"].append(
+                            {
+                                "filename": doc.filename,
+                                "matched_keyword": doc.matched_keyword,
+                                "secondary_key": doc.secondary_key,
+                                "measurements": doc.measurements,
+                            }
+                        )
                 else:
-                    results["failed_documents"].append({
-                        "filename": doc.filename,
-                        "error": result["error"]
-                    })
+                    results["failed_documents"].append(
+                        {
+                            "filename": doc.filename,
+                            "matched_keyword": doc.matched_keyword,
+                            "secondary_key": doc.secondary_key,
+                            "error": result["error"],
+                        }
+                    )
                     
             except Exception as e:
                 error_msg = f"Unexpected error processing {doc.filename}: {str(e)}"
@@ -437,21 +501,30 @@ class CoreProcessor:
                     print(f"❌ {error_msg}")
                 results["failed_documents"].append({
                     "filename": doc.filename,
+                    "matched_keyword": doc.matched_keyword,
+                    "secondary_key": doc.secondary_key,
                     "error": error_msg
                 })
         
         # Save measurements summary
         if results["measurements"]:
-            self._save_measurements_summary(measurements_dir, results["measurements"])
-        
+            self._save_measurements_summary(
+                measurements_dir,
+                results["measurements"],
+                options.measurement_summary_prefix,
+            )
+
         results["success"] = len(results["failed_documents"]) == 0
         return results
     
-    def _process_single_document(self, 
-                                doc: DocumentInfo,
-                                macro_commands: Union[str, List[str], None],
-                                options: ProcessingOptions,
-                                verbose: bool) -> Dict[str, Any]:
+    def _process_single_document(
+        self,
+        doc: DocumentInfo,
+        macro_commands: Union[str, List[str], None],
+        options: ProcessingOptions,
+        verbose: bool,
+        processed_dir: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """Process a single document."""
         if verbose:
             match_info = f" (matched keyword: {doc.matched_keyword})" if doc.matched_keyword else ""
@@ -468,12 +541,16 @@ class CoreProcessor:
         
         # Set output path if saving processed files
         if options.save_processed_files:
-            processed_dir = os.path.join(os.path.dirname(doc.file_path), "..", options.processed_folder)
-            processed_dir = os.path.abspath(processed_dir)
-            os.makedirs(processed_dir, exist_ok=True)
-            
+            target_dir = processed_dir or os.path.join(
+                os.path.dirname(doc.file_path), options.processed_folder
+            )
+            target_dir = os.path.abspath(target_dir)
+            os.makedirs(target_dir, exist_ok=True)
+
             output_filename = f"{doc.filename}_{options.custom_suffix}.tif"
-            image_data.output_path = convert_path_for_fiji(os.path.join(processed_dir, output_filename))
+            image_data.output_path = convert_path_for_fiji(
+                os.path.join(target_dir, output_filename)
+            )
         
         # Build macro
         if macro_commands is None:
@@ -526,35 +603,46 @@ class CoreProcessor:
             "error": result.get("error", None)
         }
     
-    def _save_measurements_summary(self, measurements_dir: str, measurements: List[Dict[str, Any]]):
-        """Save measurements summary to CSV and JSON."""
+    def _save_measurements_summary(
+        self,
+        measurements_dir: str,
+        measurements: List[Dict[str, Any]],
+        prefix: str,
+    ) -> None:
+        """Save measurements summary to CSV and JSON using a custom prefix."""
+
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        
+        prefix = prefix or "measurements_summary"
+
         # Save as CSV
-        csv_path = os.path.join(measurements_dir, f"measurements_summary_{timestamp}.csv")
-        with open(csv_path, 'w', newline='', encoding='utf-8') as csvfile:
+        csv_path = os.path.join(measurements_dir, f"{prefix}_{timestamp}.csv")
+        with open(csv_path, "w", newline="", encoding="utf-8") as csvfile:
             if measurements:
                 # Get all unique measurement keys
                 all_keys = set()
-                for m in measurements:
-                    if isinstance(m.get("measurements"), dict):
-                        all_keys.update(m["measurements"].keys())
-                
-                fieldnames = ["filename"] + sorted(all_keys)
+                for measurement_entry in measurements:
+                    if isinstance(measurement_entry.get("measurements"), dict):
+                        all_keys.update(measurement_entry["measurements"].keys())
+
+                fieldnames = ["filename", "matched_keyword", "secondary_key"] + sorted(all_keys)
                 writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
                 writer.writeheader()
-                
-                for m in measurements:
-                    row = {"filename": m["filename"]}
-                    if isinstance(m.get("measurements"), dict):
-                        row.update(m["measurements"])
+
+                for measurement_entry in measurements:
+                    row = {
+                        "filename": measurement_entry.get("filename"),
+                        "matched_keyword": measurement_entry.get("matched_keyword"),
+                        "secondary_key": measurement_entry.get("secondary_key"),
+                    }
+                    if isinstance(measurement_entry.get("measurements"), dict):
+                        row.update(measurement_entry["measurements"])
                     writer.writerow(row)
-        
+
         # Save as JSON
-        json_path = os.path.join(measurements_dir, f"measurements_summary_{timestamp}.json")
-        with open(json_path, 'w', encoding='utf-8') as jsonfile:
+        json_path = os.path.join(measurements_dir, f"{prefix}_{timestamp}.json")
+        with open(json_path, "w", encoding="utf-8") as jsonfile:
             json.dump(measurements, jsonfile, indent=2, default=str)
-        
+
         print(f"Measurements saved to: {csv_path} and {json_path}")
     
     def get_available_commands(self) -> Dict[str, Dict[str, Any]]:

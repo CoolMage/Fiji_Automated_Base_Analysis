@@ -19,9 +19,9 @@ def test_core_imports():
     except ImportError as e:
         print(f"❌ Core processor import failed: {e}")
         return False
-    
+
     try:
-        from config import ProcessingConfig, FileConfig, GroupConfig
+        from config import ProcessingConfig, FileConfig
         print("✅ Config modules imported successfully")
     except ImportError as e:
         print(f"❌ Config import failed: {e}")
@@ -71,16 +71,26 @@ def test_processing_options():
         
         # Test default options
         options = ProcessingOptions()
-        print(f"✅ Default options: apply_roi={options.apply_roi}, save_processed={options.save_processed_files}")
-        
+        print(
+            "✅ Default options: apply_roi="
+            f"{options.apply_roi}, save_processed={options.save_processed_files}, "
+            f"summary_prefix={options.measurement_summary_prefix}"
+        )
+
         # Test custom options
         custom_options = ProcessingOptions(
             apply_roi=True,
             save_processed_files=True,
             custom_suffix="test",
-            secondary_filter="MIP"
+            secondary_filter="MIP",
+            measurement_summary_prefix="demo",
+            roi_search_templates=("{name}.roi",),
         )
-        print(f"✅ Custom options: suffix='{custom_options.custom_suffix}', filter='{custom_options.secondary_filter}'")
+        print(
+            "✅ Custom options: suffix='"
+            f"{custom_options.custom_suffix}', filter='{custom_options.secondary_filter}', "
+            f"roi_templates={custom_options.roi_search_templates}"
+        )
         
         return True
     except Exception as e:
@@ -97,26 +107,26 @@ def test_document_info():
         doc = DocumentInfo(
             file_path="/test/path/image.tif",
             filename="image",
-            keyword="test",
+            keywords=("test",),
             matched_keyword="test",
             secondary_key="MIP",
             roi_path="/test/path/roi.zip"
         )
 
         print(
-            f"✅ DocumentInfo created: {doc.filename} (keyword: {doc.keyword}, matched: {doc.matched_keyword})"
+            f"✅ DocumentInfo created: {doc.filename} (keywords: {doc.keywords}, matched: {doc.matched_keyword})"
         )
 
         multi_doc = DocumentInfo(
             file_path="/test/path/other_image.tif",
             filename="other_image",
-            keyword=["alpha", "beta"],
+            keywords=("alpha", "beta"),
             matched_keyword="beta"
         )
 
         print(
             "✅ DocumentInfo supports multiple keywords: "
-            f"{multi_doc.keyword} (matched: {multi_doc.matched_keyword})"
+            f"{multi_doc.keywords} (matched: {multi_doc.matched_keyword})"
         )
         return True
     except Exception as e:
