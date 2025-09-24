@@ -45,6 +45,8 @@ class MacroBuilder:
         
         # Command templates for common operations
         self.command_templates = {
+            'BatchMode':   'setBatchMode(true);',
+
             # File operations
             'open_bioformats': 'run("Bio-Formats Importer", "open=[{input_path}] autoscale color_mode=Default rois_import=[ROI manager] view=Hyperstack stack_order=XYCZT series_1");',
             'open_standard': 'open("{input_path}");',
@@ -319,8 +321,16 @@ class MacroBuilder:
         else:
             raise ValueError("custom_commands must be a string or list of strings")
 
+
+
     def _build_template_context(self, image_data: ImageData) -> Dict[str, Any]:
         """Return template variables available to custom macros."""
+        def _to_fiji_path(p: str) -> str:
+            return (p or "").replace("\\", "/")
+
+        def _ensure_trailing_slash(p: str) -> str:
+            return p if p.endswith("/") else p + "/"
+
 
         roi_paths = image_data.roi_paths or []
         roi_paths_native = image_data.roi_paths_native or []
@@ -331,6 +341,16 @@ class MacroBuilder:
         roi_manager_open_native_block = "\n".join(
             f'roiManager("Open", "{path}");' for path in roi_paths_native
         )
+
+        in_native = image_data.source_path or image_data.input_path
+        in_dir_native = os.path.dirname(in_native)
+        in_dir_fiji = _to_fiji_path(in_dir_native)
+
+        out_dir_native = os.path.dirname(image_data.output_path or "")
+        out_dir_fiji = _to_fiji_path(out_dir_native)
+
+        meas_dir_native = os.path.dirname(image_data.measurements_path or "")
+        meas_dir_fiji = _to_fiji_path(meas_dir_native)
 
         context: Dict[str, Any] = {
             # Input paths
@@ -370,6 +390,17 @@ class MacroBuilder:
             "roi_paths_native_joined": "\n".join(roi_paths_native),
             "roi_manager_open_block": roi_manager_open_block,
             "roi_manager_open_native_block": roi_manager_open_native_block,
+
+            # --- НОВЫЕ ПЛЕЙСХОЛДЕРЫ ДЛЯ ДИРЕКТОРИЙ ---
+            "img_dir_fiji": in_dir_fiji,                             # без завершающего слэша
+            "img_dir_fiji_slash": _ensure_trailing_slash(in_dir_fiji),
+            "img_dir_native": in_dir_native,
+            "output_dir_fiji": out_dir_fiji,
+            "output_dir_fiji_slash": _ensure_trailing_slash(out_dir_fiji),
+            "output_dir_native": out_dir_native,
+            "measurements_dir_fiji": meas_dir_fiji,
+            "measurements_dir_fiji_slash": _ensure_trailing_slash(meas_dir_fiji),
+            "measurements_dir_native": meas_dir_native,
         }
 
         return context

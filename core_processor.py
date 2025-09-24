@@ -345,6 +345,11 @@ class CoreProcessor:
                 if secondary_filter and secondary_filter.lower() not in file_lower:
                     continue
 
+                allowed_exts = tuple(ext.lower() for ext in self.file_config.supported_extensions)
+                matched_ext = next((ext for ext in allowed_exts if file_lower.endswith(ext)), None)
+                if matched_ext is None:
+                    continue
+
                 file_path = os.path.join(root, file)
                 filename = os.path.splitext(file)[0]
 
@@ -645,6 +650,10 @@ class CoreProcessor:
             # Ensure quit command is present to close Fiji
             if not any(cmd.command == "quit" for cmd in commands):
                 commands.append(MacroCommand("quit"))
+            
+            # Ensure BatchMode command is present to close Fiji
+            if not any(cmd.command == "BatchMode" for cmd in commands):
+                commands.insert(0, MacroCommand("BatchMode"))
 
             needs_processed_output = any(cmd.command == "save_tiff" for cmd in commands)
             needs_measurement_output = any(cmd.command == "save_csv" for cmd in commands)

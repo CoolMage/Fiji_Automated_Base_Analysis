@@ -13,6 +13,9 @@ from pprint import pprint
 from config import FileConfig
 from core_processor import CoreProcessor, ProcessingOptions
 
+from examples.macros_lib import MACROS_LIB
+
+
 
 def build_processor() -> CoreProcessor:
     """Create a CoreProcessor with example file configuration overrides."""
@@ -29,8 +32,8 @@ def build_processor() -> CoreProcessor:
 def build_options() -> ProcessingOptions:
     """Configure processing options that showcase common customizations."""
     return ProcessingOptions(
-        apply_roi=False,
-        save_processed_files=True,
+        apply_roi=True,
+        save_processed_files=False,
         save_measurements_csv=True,
         custom_suffix="analyzed",
         measurements_folder="Measurements",
@@ -48,20 +51,22 @@ def main() -> None:
     processor = build_processor()
     options = build_options()
 
-    macro_commands = [
-        "open_bioformats",
-        'subtract_background radius=30',
-        'median_filter radius=2',
-        'enhance_contrast saturated=0.4 normalize',
-        "save_tiff",
-        "measure",
-        "save_csv",
-        "quit",
-    ]
+
+    # macro_commands = [
+    #     "open_bioformats",
+    #     'subtract_background radius=30',
+    #     'median_filter radius=2',
+    #     'enhance_contrast saturated=0.4 normalize',
+    #     "save_tiff",
+    #     "measure",
+    #     "save_csv",
+    # ]
+
+    macro_commands = MACROS_LIB["all_image_and_rois_measure_for_channel"]
 
     result = processor.process_documents(
         base_path=str(base_path),
-        keyword=("4MU", "Control"),
+        keyword=("Potkan1"),
         macro_commands=macro_commands,
         options=options,
         verbose=True,
