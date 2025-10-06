@@ -203,6 +203,11 @@ class FijiProcessorGUI:
         )
         self.list_commands_button.pack(side=tk.LEFT, padx=5)
 
+        self.list_placeholders_button = tk.Button(
+            action_frame, text="List Placeholders", command=self._list_placeholders
+        )
+        self.list_placeholders_button.pack(side=tk.LEFT, padx=5)
+
         self.run_button = tk.Button(action_frame, text="Run Processing", command=self._run_processing)
         self.run_button.pack(side=tk.RIGHT)
 
@@ -575,6 +580,81 @@ class FijiProcessorGUI:
             if info.get("parameters"):
                 text.insert(tk.END, f"  Parameters: {info['parameters']}\n")
             text.insert(tk.END, f"  Example: {info['example']}\n\n")
+
+        text.configure(state="disabled")
+
+    def _list_placeholders(self) -> None:
+        placeholder_groups = [
+            (
+                "{input_path}, {input_path_fiji}, {img_path_fiji}, {img_path}, {IMG}",
+                "Fiji-formatted path to the current image.",
+            ),
+            (
+                "{input_path_native}, {img_path_native}",
+                "Native filesystem path to the current image.",
+            ),
+            (
+                "{output_path}, {output_path_fiji}, {out_tiff}, {out_image}, {OUT}",
+                "Fiji path for processed image output (created when processed files are saved).",
+            ),
+            (
+                "{output_path_native}",
+                "Native filesystem path to the processed image output.",
+            ),
+            (
+                "{measurements_path}, {measurements_path_fiji}, {out_csv}, {CSV}",
+                "Fiji path to the measurement export (created when measurements are saved).",
+            ),
+            (
+                "{measurements_path_native}",
+                "Native filesystem path to the measurement export.",
+            ),
+            (
+                "{document_name}, {file_stem}",
+                "Filename without extension for the current document.",
+            ),
+            (
+                "{roi_paths}, {roi_paths_native}",
+                "Lists of ROI paths in Fiji-formatted and native styles.",
+            ),
+            (
+                "{roi_paths_joined}, {roi_paths_native_joined}",
+                "Newline-joined versions of the ROI path lists.",
+            ),
+            (
+                "{roi_manager_open_block}, {roi_manager_open_native_block}",
+                "Convenience blocks that open every ROI path with roiManager().",
+            ),
+            (
+                "{img_dir_fiji}, {img_dir_fiji_slash}, {img_dir_native}",
+                "Directories containing the source image (Fiji formatted and native).",
+            ),
+            (
+                "{output_dir_fiji}, {output_dir_fiji_slash}, {output_dir_native}",
+                "Directories for processed outputs (Fiji formatted and native).",
+            ),
+            (
+                "{measurements_dir_fiji}, {measurements_dir_fiji_slash}, {measurements_dir_native}",
+                "Directories for measurement exports (Fiji formatted and native).",
+            ),
+        ]
+
+        window = tk.Toplevel(self.root)
+        window.title("Macro Placeholders")
+        window.geometry("520x480")
+
+        text = scrolledtext.ScrolledText(window, wrap=tk.WORD)
+        text.pack(fill=tk.BOTH, expand=True)
+
+        intro = (
+            "Macro templates accept the following placeholders. "
+            "Each placeholder is substituted before the macro runs:\n\n"
+        )
+        text.insert(tk.END, intro)
+
+        for names, description in placeholder_groups:
+            text.insert(tk.END, f"{names}\n")
+            text.insert(tk.END, f"  {description}\n\n")
 
         text.configure(state="disabled")
 
