@@ -33,6 +33,7 @@ class FijiProcessorGUI:
         self.macro_library_var = tk.StringVar()
         self.macro_code_value = ""
         self.macro_summary_var = tk.StringVar()
+        self._library_code_overrides: dict[str, str] = {}
 
         self._build_widgets()
         self.root.after(100, self._process_log_queue)
@@ -202,6 +203,11 @@ class FijiProcessorGUI:
         )
         self.list_commands_button.pack(side=tk.LEFT, padx=5)
 
+        self.list_placeholders_button = tk.Button(
+            action_frame, text="List Placeholders", command=self._list_placeholders
+        )
+        self.list_placeholders_button.pack(side=tk.LEFT, padx=5)
+
         self.run_button = tk.Button(action_frame, text="Run Processing", command=self._run_processing)
         self.run_button.pack(side=tk.RIGHT)
 
@@ -344,7 +350,7 @@ class FijiProcessorGUI:
             wraplength=560,
             justify=tk.LEFT,
         ).pack(fill=tk.X, pady=(0, 5))
-        code_text = scrolledtext.ScrolledText(code_frame, wrap=tk.WORD)
+        code_text = scrolledtext.ScrolledText(code_frame, wrap=tk.WORD, height=15)
         code_text.insert("1.0", self.macro_code_value)
         code_text.pack(fill=tk.BOTH, expand=True)
 
@@ -359,8 +365,39 @@ class FijiProcessorGUI:
             wraplength=560,
             justify=tk.LEFT,
         ).pack(fill=tk.X, pady=(0, 5))
+        library_code_text: Optional[scrolledtext.ScrolledText] = None
+
+        def _get_library_code(name: str) -> str:
+            if not name:
+                return ""
+            override = self._library_code_overrides.get(name)
+            if override is not None:
+                return override
+            return MACROS_LIB.get(name, "")
+
+        def _update_library_text(*_: object) -> None:
+            if library_code_text is None:
+                return
+            code_value = _get_library_code(library_var.get().strip())
+            library_code_text.delete("1.0", tk.END)
+            library_code_text.insert("1.0", code_value)
+            library_code_text.edit_modified(False)
+
         if library_names:
-            tk.OptionMenu(library_frame, library_var, *library_names).pack(anchor="w")
+            option_menu = tk.OptionMenu(
+                library_frame,
+                library_var,
+                *library_names,
+                command=lambda *_: _update_library_text(),
+            )
+            option_menu.pack(anchor="w", pady=(0, 5))
+            library_code_text = scrolledtext.ScrolledText(
+                library_frame,
+                wrap=tk.WORD,
+                height=15,
+            )
+            library_code_text.pack(fill=tk.BOTH, expand=True)
+            _update_library_text()
         else:
             tk.Label(
                 library_frame,
@@ -385,7 +422,15 @@ class FijiProcessorGUI:
             self.macro_commands_var.set(commands_var.get().strip())
             self.macro_code_value = code_text.get("1.0", tk.END).strip()
             if library_names:
-                self.macro_library_var.set(library_var.get().strip())
+                selected = library_var.get().strip()
+                self.macro_library_var.set(selected)
+                if library_code_text is not None:
+                    library_code_value = library_code_text.get("1.0", tk.END).strip()
+                    default_code = MACROS_LIB.get(selected, "").strip()
+                    if library_code_value == default_code:
+                        self._library_code_overrides.pop(selected, None)
+                    else:
+                        self._library_code_overrides[selected] = library_code_value
             else:
                 self.macro_library_var.set("")
             self._update_macro_summary()
@@ -407,7 +452,10 @@ class FijiProcessorGUI:
         else:
             name = self.macro_library_var.get().strip()
             summary = name or "(none selected)"
-            text = f"Library macro: {summary}"
+            if name and name in self._library_code_overrides:
+                text = f"Library macro: {summary} (customized)"
+            else:
+                text = f"Library macro: {summary}"
         self.macro_summary_var.set(text)
 
     # ------------------------------------------------------------------
@@ -532,6 +580,81 @@ class FijiProcessorGUI:
             if info.get("parameters"):
                 text.insert(tk.END, f"  Parameters: {info['parameters']}\n")
             text.insert(tk.END, f"  Example: {info['example']}\n\n")
+
+        text.configure(state="disabled")
+
+    def _list_placeholders(self) -> None:
+        placeholder_groups = [
+            (
+                "{input_path}, {input_path_fiji}, {img_path_fiji}, {img_path}, {IMG}",
+                "Fiji-formatted path to the current image.",
+            ),
+            (
+                "{input_path_native}, {img_path_native}",
+                "Native filesystem path to the current image.",
+            ),
+            (
+                "{output_path}, {output_path_fiji}, {out_tiff}, {out_image}, {OUT}",
+                "Fiji path for processed image output (created when processed files are saved).",
+            ),
+            (
+                "{output_path_native}",
+                "Native filesystem path to the processed image output.",
+            ),
+            (
+                "{measurements_path}, {measurements_path_fiji}, {out_csv}, {CSV}",
+                "Fiji path to the measurement export (created when measurements are saved).",
+            ),
+            (
+                "{measurements_path_native}",
+                "Native filesystem path to the measurement export.",
+            ),
+            (
+                "{document_name}, {file_stem}",
+                "Filename without extension for the current document.",
+            ),
+            (
+                "{roi_paths}, {roi_paths_native}",
+                "Lists of ROI paths in Fiji-formatted and native styles.",
+            ),
+            (
+                "{roi_paths_joined}, {roi_paths_native_joined}",
+                "Newline-joined versions of the ROI path lists.",
+            ),
+            (
+                "{roi_manager_open_block}, {roi_manager_open_native_block}",
+                "Convenience blocks that open every ROI path with roiManager().",
+            ),
+            (
+                "{img_dir_fiji}, {img_dir_fiji_slash}, {img_dir_native}",
+                "Directories containing the source image (Fiji formatted and native).",
+            ),
+            (
+                "{output_dir_fiji}, {output_dir_fiji_slash}, {output_dir_native}",
+                "Directories for processed outputs (Fiji formatted and native).",
+            ),
+            (
+                "{measurements_dir_fiji}, {measurements_dir_fiji_slash}, {measurements_dir_native}",
+                "Directories for measurement exports (Fiji formatted and native).",
+            ),
+        ]
+
+        window = tk.Toplevel(self.root)
+        window.title("Macro Placeholders")
+        window.geometry("520x480")
+
+        text = scrolledtext.ScrolledText(window, wrap=tk.WORD)
+        text.pack(fill=tk.BOTH, expand=True)
+
+        intro = (
+            "Macro templates accept the following placeholders. "
+            "Each placeholder is substituted before the macro runs:\n\n"
+        )
+        text.insert(tk.END, intro)
+
+        for names, description in placeholder_groups:
+            text.insert(tk.END, f"{names}\n")
+            text.insert(tk.END, f"  {description}\n\n")
 
         text.configure(state="disabled")
 
@@ -671,6 +794,9 @@ class FijiProcessorGUI:
                 raise ValueError(
                     f"Macro '{name}' was not found in the bundled macro library."
                 )
+            if name in self._library_code_overrides:
+                value = self._library_code_overrides[name].strip()
+                return value or None
             return MACROS_LIB[name]
         raise ValueError(f"Unsupported macro mode: {mode}")
 
