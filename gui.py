@@ -345,7 +345,7 @@ class FijiProcessorGUI:
             wraplength=560,
             justify=tk.LEFT,
         ).pack(fill=tk.X, pady=(0, 5))
-        code_text = scrolledtext.ScrolledText(code_frame, wrap=tk.WORD)
+        code_text = scrolledtext.ScrolledText(code_frame, wrap=tk.WORD, height=15)
         code_text.insert("1.0", self.macro_code_value)
         code_text.pack(fill=tk.BOTH, expand=True)
 
