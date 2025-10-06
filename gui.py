@@ -1,0 +1,475 @@
+"""Graphical user interface for the Fiji automated base analysis toolkit."""
+
+from __future__ import annotations
+
+import os
+import threading
+import queue
+from typing import Iterable, List, Optional, Sequence, Union
+
+import tkinter as tk
+from tkinter import filedialog, messagebox
+from tkinter import scrolledtext
+
+from core_processor import CommandLibrary, CoreProcessor, ProcessingOptions
+
+
+class FijiProcessorGUI:
+    """Tkinter-based GUI for orchestrating Fiji document processing."""
+
+    def __init__(self, root: tk.Tk) -> None:
+        self.root = root
+        self.root.title("Fiji Automated Base Analysis")
+        self.root.geometry("900x650")
+
+        self._processor: Optional[CoreProcessor] = None
+        self._worker_thread: Optional[threading.Thread] = None
+        self._log_queue: "queue.Queue[str]" = queue.Queue()
+
+        self._build_widgets()
+        self.root.after(100, self._process_log_queue)
+
+    # ------------------------------------------------------------------
+    # Widget construction helpers
+    # ------------------------------------------------------------------
+    def _build_widgets(self) -> None:
+        main_frame = tk.Frame(self.root, padx=10, pady=10)
+        main_frame.pack(fill=tk.BOTH, expand=True)
+
+        # Path configuration -------------------------------------------------
+        path_frame = tk.LabelFrame(main_frame, text="Paths", padx=10, pady=10)
+        path_frame.pack(fill=tk.X, expand=False, pady=(0, 10))
+
+        self.base_path_var = tk.StringVar()
+        self.fiji_path_var = tk.StringVar()
+
+        self._add_labeled_entry(
+            path_frame,
+            "Base directory:",
+            self.base_path_var,
+            0,
+            browse_command=self._browse_directory,
+        )
+        self._add_labeled_entry(
+            path_frame,
+            "Fiji executable:",
+            self.fiji_path_var,
+            1,
+            browse_command=lambda: self._browse_file(self.fiji_path_var),
+        )
+
+        # Keyword configuration ---------------------------------------------
+        keyword_frame = tk.LabelFrame(main_frame, text="Keywords", padx=10, pady=10)
+        keyword_frame.pack(fill=tk.BOTH, expand=False, pady=(0, 10))
+
+        self.keyword_var = tk.StringVar()
+        keyword_entry = tk.Entry(keyword_frame, textvariable=self.keyword_var)
+        keyword_entry.grid(row=0, column=0, sticky="we")
+
+        add_keyword_btn = tk.Button(keyword_frame, text="Add", command=self._add_keyword)
+        add_keyword_btn.grid(row=0, column=1, padx=5)
+
+        remove_keyword_btn = tk.Button(
+            keyword_frame, text="Remove Selected", command=self._remove_selected_keyword
+        )
+        remove_keyword_btn.grid(row=0, column=2)
+
+        keyword_frame.grid_columnconfigure(0, weight=1)
+
+        self.keyword_listbox = tk.Listbox(keyword_frame, height=4, selectmode=tk.EXTENDED)
+        self.keyword_listbox.grid(row=1, column=0, columnspan=3, sticky="nsew", pady=(5, 0))
+
+        keyword_frame.grid_rowconfigure(1, weight=1)
+
+        # ROI templates ------------------------------------------------------
+        roi_frame = tk.LabelFrame(main_frame, text="ROI Templates", padx=10, pady=10)
+        roi_frame.pack(fill=tk.BOTH, expand=False, pady=(0, 10))
+
+        self.roi_var = tk.StringVar()
+        roi_entry = tk.Entry(roi_frame, textvariable=self.roi_var)
+        roi_entry.grid(row=0, column=0, sticky="we")
+
+        add_roi_btn = tk.Button(roi_frame, text="Add", command=self._add_roi_template)
+        add_roi_btn.grid(row=0, column=1, padx=5)
+
+        remove_roi_btn = tk.Button(
+            roi_frame, text="Remove Selected", command=self._remove_selected_roi_template
+        )
+        remove_roi_btn.grid(row=0, column=2)
+
+        roi_frame.grid_columnconfigure(0, weight=1)
+
+        self.roi_listbox = tk.Listbox(roi_frame, height=3, selectmode=tk.EXTENDED)
+        self.roi_listbox.grid(row=1, column=0, columnspan=3, sticky="nsew", pady=(5, 0))
+
+        roi_frame.grid_rowconfigure(1, weight=1)
+
+        # Processing options -------------------------------------------------
+        options_frame = tk.LabelFrame(main_frame, text="Processing Options", padx=10, pady=10)
+        options_frame.pack(fill=tk.BOTH, expand=False, pady=(0, 10))
+
+        self.secondary_filter_var = tk.StringVar()
+        self.commands_var = tk.StringVar()
+        self.suffix_var = tk.StringVar(value="processed")
+        self.measurements_folder_var = tk.StringVar(value="Measurements")
+        self.processed_folder_var = tk.StringVar(value="Processed_Files")
+        self.measurement_prefix_var = tk.StringVar(value="measurements_summary")
+
+        self.apply_roi_var = tk.BooleanVar(value=False)
+        self.save_processed_var = tk.BooleanVar(value=False)
+        self.save_measurements_var = tk.BooleanVar(value=False)
+        self.verbose_var = tk.BooleanVar(value=False)
+        self.generate_summary_var = tk.BooleanVar(value=True)
+
+        row = 0
+        row = self._add_option_entry(
+            options_frame,
+            row,
+            "Secondary filter:",
+            self.secondary_filter_var,
+            tooltip="Optional secondary substring that must also be present.",
+        )
+        row = self._add_option_entry(
+            options_frame,
+            row,
+            "Macro commands:",
+            self.commands_var,
+            tooltip="Space-separated macro commands to run in Fiji.",
+        )
+        row = self._add_option_entry(options_frame, row, "Processed suffix:", self.suffix_var)
+        row = self._add_option_entry(
+            options_frame, row, "Measurements folder:", self.measurements_folder_var
+        )
+        row = self._add_option_entry(
+            options_frame, row, "Processed folder:", self.processed_folder_var
+        )
+        row = self._add_option_entry(
+            options_frame, row, "Measurement prefix:", self.measurement_prefix_var
+        )
+
+        checkbox_frame = tk.Frame(options_frame)
+        checkbox_frame.grid(row=row, column=0, columnspan=2, sticky="w", pady=(5, 0))
+
+        tk.Checkbutton(
+            checkbox_frame, text="Apply ROI templates", variable=self.apply_roi_var
+        ).pack(anchor="w")
+        tk.Checkbutton(
+            checkbox_frame, text="Save processed images", variable=self.save_processed_var
+        ).pack(anchor="w")
+        tk.Checkbutton(
+            checkbox_frame, text="Save measurement CSV", variable=self.save_measurements_var
+        ).pack(anchor="w")
+        tk.Checkbutton(
+            checkbox_frame, text="Verbose logging", variable=self.verbose_var
+        ).pack(anchor="w")
+        tk.Checkbutton(
+            checkbox_frame, text="Generate measurement summary", variable=self.generate_summary_var
+        ).pack(anchor="w")
+
+        # Action buttons -----------------------------------------------------
+        action_frame = tk.Frame(main_frame)
+        action_frame.pack(fill=tk.X, pady=(0, 10))
+
+        self.validate_button = tk.Button(action_frame, text="Validate Setup", command=self._validate_setup)
+        self.validate_button.pack(side=tk.LEFT)
+
+        self.list_commands_button = tk.Button(
+            action_frame, text="List Commands", command=self._list_commands
+        )
+        self.list_commands_button.pack(side=tk.LEFT, padx=5)
+
+        self.run_button = tk.Button(action_frame, text="Run Processing", command=self._run_processing)
+        self.run_button.pack(side=tk.RIGHT)
+
+        # Log output ---------------------------------------------------------
+        log_frame = tk.LabelFrame(main_frame, text="Log", padx=10, pady=10)
+        log_frame.pack(fill=tk.BOTH, expand=True)
+
+        self.log_widget = scrolledtext.ScrolledText(log_frame, wrap=tk.WORD, state="disabled")
+        self.log_widget.pack(fill=tk.BOTH, expand=True)
+
+    def _add_labeled_entry(
+        self,
+        parent: tk.Widget,
+        label: str,
+        variable: tk.StringVar,
+        row: int,
+        *,
+        browse_command=None,
+    ) -> None:
+        tk.Label(parent, text=label).grid(row=row, column=0, sticky="w")
+        entry = tk.Entry(parent, textvariable=variable)
+        entry.grid(row=row, column=1, sticky="we", padx=(5, 5))
+        parent.grid_columnconfigure(1, weight=1)
+        if browse_command is not None:
+            tk.Button(parent, text="Browse", command=browse_command).grid(row=row, column=2)
+
+    def _add_option_entry(
+        self,
+        parent: tk.Widget,
+        row: int,
+        label: str,
+        variable: tk.StringVar,
+        *,
+        tooltip: Optional[str] = None,
+    ) -> int:
+        tk.Label(parent, text=label).grid(row=row, column=0, sticky="w")
+        entry = tk.Entry(parent, textvariable=variable)
+        entry.grid(row=row, column=1, sticky="we", padx=(5, 0), pady=(0, 3))
+        parent.grid_columnconfigure(1, weight=1)
+        return row + 1
+
+    # ------------------------------------------------------------------
+    # Path utilities
+    # ------------------------------------------------------------------
+    def _browse_directory(self) -> None:
+        initial = self.base_path_var.get() or os.getcwd()
+        directory = filedialog.askdirectory(initialdir=initial, title="Select base directory")
+        if directory:
+            self.base_path_var.set(directory)
+
+    def _browse_file(self, variable: tk.StringVar) -> None:
+        initial = variable.get() or os.getcwd()
+        path = filedialog.askopenfilename(initialdir=initial, title="Select file")
+        if path:
+            variable.set(path)
+
+    # ------------------------------------------------------------------
+    # Keyword & ROI helpers
+    # ------------------------------------------------------------------
+    def _add_keyword(self) -> None:
+        value = self.keyword_var.get().strip()
+        if not value:
+            return
+        for keyword in self._split_entries(value):
+            if keyword:
+                self.keyword_listbox.insert(tk.END, keyword)
+        self.keyword_var.set("")
+
+    def _remove_selected_keyword(self) -> None:
+        self._remove_selected(self.keyword_listbox)
+
+    def _add_roi_template(self) -> None:
+        value = self.roi_var.get().strip()
+        if not value:
+            return
+        for template in self._split_entries(value):
+            if template:
+                self.roi_listbox.insert(tk.END, template)
+        self.roi_var.set("")
+
+    def _remove_selected_roi_template(self) -> None:
+        self._remove_selected(self.roi_listbox)
+
+    def _remove_selected(self, listbox: tk.Listbox) -> None:
+        selection = listbox.curselection()
+        for index in reversed(selection):
+            listbox.delete(index)
+
+    @staticmethod
+    def _split_entries(value: str) -> Iterable[str]:
+        return [part.strip() for part in value.split(",") if part.strip()]
+
+    # ------------------------------------------------------------------
+    # Logging utilities
+    # ------------------------------------------------------------------
+    def _log(self, message: str) -> None:
+        self._log_queue.put(message)
+
+    def _process_log_queue(self) -> None:
+        while True:
+            try:
+                message = self._log_queue.get_nowait()
+            except queue.Empty:
+                break
+            self.log_widget.configure(state="normal")
+            self.log_widget.insert(tk.END, message + "\n")
+            self.log_widget.configure(state="disabled")
+            self.log_widget.see(tk.END)
+        self.root.after(100, self._process_log_queue)
+
+    # ------------------------------------------------------------------
+    # Button actions
+    # ------------------------------------------------------------------
+    def _validate_setup(self) -> None:
+        try:
+            processor = self._get_processor()
+            self._log("Validating Fiji setup...")
+            validation = processor.validate_setup()
+            details = [
+                f"Fiji path: {validation['fiji_path']}",
+                f"Fiji valid: {validation['fiji_valid']}",
+                f"Available commands: {len(validation['available_commands'])}",
+                f"Supported extensions: {', '.join(validation['supported_extensions'])}",
+            ]
+            self._log("\n".join(details))
+            messagebox.showinfo("Validation", "Setup validation complete. See log for details.")
+        except Exception as exc:  # pragma: no cover - GUI fallback
+            messagebox.showerror("Validation error", str(exc))
+
+    def _list_commands(self) -> None:
+        try:
+            library = CommandLibrary()
+            commands = library.list_commands()
+        except Exception as exc:  # pragma: no cover - GUI fallback
+            messagebox.showerror("Command error", str(exc))
+            return
+
+        window = tk.Toplevel(self.root)
+        window.title("Available Commands")
+        window.geometry("500x500")
+
+        text = scrolledtext.ScrolledText(window, wrap=tk.WORD)
+        text.pack(fill=tk.BOTH, expand=True)
+
+        for name, info in sorted(commands.items()):
+            text.insert(tk.END, f"{name}\n")
+            text.insert(tk.END, f"  Description: {info['description']}\n")
+            if info.get("parameters"):
+                text.insert(tk.END, f"  Parameters: {info['parameters']}\n")
+            text.insert(tk.END, f"  Example: {info['example']}\n\n")
+
+        text.configure(state="disabled")
+
+    def _run_processing(self) -> None:
+        if self._worker_thread and self._worker_thread.is_alive():
+            messagebox.showinfo("Processing", "Processing is already running.")
+            return
+
+        base_path = self.base_path_var.get().strip()
+        if not base_path:
+            messagebox.showwarning("Missing information", "Please select a base directory.")
+            return
+
+        keywords = self._collect_listbox_values(self.keyword_listbox)
+        if not keywords:
+            messagebox.showwarning("Missing information", "Please add at least one keyword.")
+            return
+
+        options = self._gather_processing_options()
+        keyword_input: Union[str, Sequence[str]] = (
+            keywords[0] if len(keywords) == 1 else list(keywords)
+        )
+
+        commands = self.commands_var.get().strip() or None
+
+        processor = self._get_processor()
+
+        args = dict(
+            base_path=os.path.abspath(os.path.expanduser(base_path)),
+            keyword=keyword_input,
+            macro_commands=commands,
+            options=options,
+            verbose=self.verbose_var.get(),
+        )
+
+        self._log("Starting processing...\n")
+        self._set_running(True)
+
+        def worker() -> None:
+            try:
+                result = processor.process_documents(**args)
+                if result.get("success"):
+                    self._log("✅ Processing completed successfully!")
+                    processed = result.get("processed_documents", [])
+                    self._log(f"Processed documents: {len(processed)}")
+                    if processed and self.verbose_var.get():
+                        for entry in processed:
+                            match_note = (
+                                f" (matched keyword: {entry['matched_keyword']})"
+                                if entry.get("matched_keyword")
+                                else ""
+                            )
+                            secondary_note = (
+                                f" [secondary: {entry['secondary_key']}]"
+                                if entry.get("secondary_key")
+                                else ""
+                            )
+                            self._log(f"  - {entry['filename']}{match_note}{secondary_note}")
+                    measurements = result.get("measurements")
+                    if measurements:
+                        self._log(
+                            f"Measurements recorded for {len(measurements)} document(s)."
+                        )
+                    failed = result.get("failed_documents") or []
+                    if failed:
+                        self._log(
+                            f"Completed with {len(failed)} warning(s). See details below:"
+                        )
+                        for entry in failed:
+                            match_note = (
+                                f" (matched keyword: {entry['matched_keyword']})"
+                                if entry.get("matched_keyword")
+                                else ""
+                            )
+                            secondary_note = (
+                                f" [secondary: {entry['secondary_key']}]"
+                                if entry.get("secondary_key")
+                                else ""
+                            )
+                            self._log(
+                                f"  - {entry['filename']}{match_note}{secondary_note}: {entry['error']}"
+                            )
+                else:
+                    self._log(f"❌ Processing failed: {result.get('error')}")
+            except Exception as exc:  # pragma: no cover - background thread fallback
+                self._log(f"Error: {exc}")
+            finally:
+                self._set_running(False)
+
+        self._worker_thread = threading.Thread(target=worker, daemon=True)
+        self._worker_thread.start()
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+    def _collect_listbox_values(self, listbox: tk.Listbox) -> List[str]:
+        return [listbox.get(idx) for idx in range(listbox.size())]
+
+    def _gather_processing_options(self) -> ProcessingOptions:
+        roi_templates = self._collect_listbox_values(self.roi_listbox) or None
+
+        options = ProcessingOptions(
+            apply_roi=self.apply_roi_var.get(),
+            save_processed_files=self.save_processed_var.get(),
+            save_measurements_csv=self.save_measurements_var.get(),
+            custom_suffix=self.suffix_var.get().strip() or "processed",
+            measurements_folder=self.measurements_folder_var.get().strip() or "Measurements",
+            processed_folder=self.processed_folder_var.get().strip() or "Processed_Files",
+            measurement_summary_prefix=self.measurement_prefix_var.get().strip()
+            or "measurements_summary",
+            generate_measurement_summary=self.generate_summary_var.get(),
+            roi_search_templates=roi_templates,
+        )
+
+        secondary = self.secondary_filter_var.get().strip()
+        options.secondary_filter = secondary or None
+
+        return options
+
+    def _get_processor(self) -> CoreProcessor:
+        if self._processor is None:
+            fiji_path = self.fiji_path_var.get().strip() or None
+            self._processor = CoreProcessor(fiji_path=fiji_path)
+        else:
+            fiji_path = self.fiji_path_var.get().strip() or None
+            if fiji_path:
+                self._processor.fiji_path = fiji_path
+        return self._processor
+
+    def _set_running(self, running: bool) -> None:
+        state = tk.DISABLED if running else tk.NORMAL
+        for widget in (self.run_button, self.validate_button, self.list_commands_button):
+            widget.configure(state=state)
+        if not running:
+            self._log("\n")
+
+
+def main() -> None:
+    root = tk.Tk()
+    FijiProcessorGUI(root)
+    root.mainloop()
+
+
+if __name__ == "__main__":
+    main()
