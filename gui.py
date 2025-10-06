@@ -12,6 +12,8 @@ from tkinter import filedialog, messagebox
 from tkinter import scrolledtext
 
 from core_processor import CommandLibrary, CoreProcessor, ProcessingOptions
+from examples.macros_lib import MACROS_LIB
+from utils.general.fiji_utils import find_fiji
 
 
 class FijiProcessorGUI:
@@ -26,6 +28,12 @@ class FijiProcessorGUI:
         self._worker_thread: Optional[threading.Thread] = None
         self._log_queue: "queue.Queue[str]" = queue.Queue()
 
+        self.macro_mode_var = tk.StringVar(value="commands")
+        self.macro_commands_var = tk.StringVar()
+        self.macro_library_var = tk.StringVar()
+        self.macro_code_value = ""
+        self.macro_summary_var = tk.StringVar()
+
         self._build_widgets()
         self.root.after(100, self._process_log_queue)
 
@@ -33,8 +41,28 @@ class FijiProcessorGUI:
     # Widget construction helpers
     # ------------------------------------------------------------------
     def _build_widgets(self) -> None:
-        main_frame = tk.Frame(self.root, padx=10, pady=10)
-        main_frame.pack(fill=tk.BOTH, expand=True)
+        container = tk.Frame(self.root)
+        container.pack(fill=tk.BOTH, expand=True)
+
+        canvas = tk.Canvas(container, highlightthickness=0)
+        scrollbar = tk.Scrollbar(container, orient=tk.VERTICAL, command=canvas.yview)
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        main_frame = tk.Frame(canvas, padx=10, pady=10)
+        frame_window = canvas.create_window((0, 0), window=main_frame, anchor="nw")
+
+        def _configure_scroll_region(event: tk.Event) -> None:
+            canvas.configure(scrollregion=canvas.bbox("all"))
+
+        def _resize_frame(event: tk.Event) -> None:
+            canvas.itemconfigure(frame_window, width=event.width)
+
+        main_frame.bind("<Configure>", _configure_scroll_region)
+        canvas.bind("<Configure>", _resize_frame)
+        self._enable_mousewheel(canvas)
 
         # Path configuration -------------------------------------------------
         path_frame = tk.LabelFrame(main_frame, text="Paths", padx=10, pady=10)
@@ -56,6 +84,9 @@ class FijiProcessorGUI:
             self.fiji_path_var,
             1,
             browse_command=lambda: self._browse_file(self.fiji_path_var),
+        )
+        tk.Button(path_frame, text="Auto-detect", command=self._auto_detect_fiji).grid(
+            row=1, column=3, padx=(5, 0)
         )
 
         # Keyword configuration ---------------------------------------------
@@ -109,7 +140,6 @@ class FijiProcessorGUI:
         options_frame.pack(fill=tk.BOTH, expand=False, pady=(0, 10))
 
         self.secondary_filter_var = tk.StringVar()
-        self.commands_var = tk.StringVar()
         self.suffix_var = tk.StringVar(value="processed")
         self.measurements_folder_var = tk.StringVar(value="Measurements")
         self.processed_folder_var = tk.StringVar(value="Processed_Files")
@@ -129,13 +159,7 @@ class FijiProcessorGUI:
             self.secondary_filter_var,
             tooltip="Optional secondary substring that must also be present.",
         )
-        row = self._add_option_entry(
-            options_frame,
-            row,
-            "Macro commands:",
-            self.commands_var,
-            tooltip="Space-separated macro commands to run in Fiji.",
-        )
+        row = self._add_macro_configuration(options_frame, row)
         row = self._add_option_entry(options_frame, row, "Processed suffix:", self.suffix_var)
         row = self._add_option_entry(
             options_frame, row, "Measurements folder:", self.measurements_folder_var
@@ -188,6 +212,8 @@ class FijiProcessorGUI:
         self.log_widget = scrolledtext.ScrolledText(log_frame, wrap=tk.WORD, state="disabled")
         self.log_widget.pack(fill=tk.BOTH, expand=True)
 
+        self._update_macro_summary()
+
     def _add_labeled_entry(
         self,
         parent: tk.Widget,
@@ -219,6 +245,171 @@ class FijiProcessorGUI:
         parent.grid_columnconfigure(1, weight=1)
         return row + 1
 
+    def _add_macro_configuration(self, parent: tk.Widget, row: int) -> int:
+        tk.Label(parent, text="Macro configuration:").grid(row=row, column=0, sticky="w")
+        summary = tk.Label(
+            parent,
+            textvariable=self.macro_summary_var,
+            anchor="w",
+            relief=tk.SUNKEN,
+            padx=5,
+            pady=2,
+        )
+        summary.grid(row=row, column=1, sticky="we", padx=(5, 0), pady=(0, 3))
+        tk.Button(parent, text="Configure...", command=self._open_macro_window).grid(
+            row=row, column=2, padx=(5, 0)
+        )
+        parent.grid_columnconfigure(1, weight=1)
+        return row + 1
+
+    def _enable_mousewheel(self, canvas: tk.Canvas) -> None:
+        def _on_mousewheel(event: tk.Event) -> None:
+            if event.delta:
+                delta = int(-event.delta / 120) if abs(event.delta) >= 120 else -1 if event.delta > 0 else 1
+                canvas.yview_scroll(delta, "units")
+
+        def _on_scroll_up(event: tk.Event) -> None:
+            canvas.yview_scroll(-1, "units")
+
+        def _on_scroll_down(event: tk.Event) -> None:
+            canvas.yview_scroll(1, "units")
+
+        canvas.bind_all("<MouseWheel>", _on_mousewheel)
+        canvas.bind_all("<Button-4>", _on_scroll_up)
+        canvas.bind_all("<Button-5>", _on_scroll_down)
+
+    def _open_macro_window(self) -> None:
+        window = tk.Toplevel(self.root)
+        window.title("Configure Macro")
+        window.geometry("640x520")
+        window.transient(self.root)
+        window.grab_set()
+
+        mode_var = tk.StringVar(value=self.macro_mode_var.get())
+        commands_var = tk.StringVar(value=self.macro_commands_var.get())
+        library_names = sorted(MACROS_LIB.keys())
+        initial_library = self.macro_library_var.get() or (library_names[0] if library_names else "")
+        library_var = tk.StringVar(value=initial_library)
+
+        mode_frame = tk.LabelFrame(window, text="Macro input mode", padx=10, pady=10)
+        mode_frame.pack(fill=tk.X, padx=10, pady=(10, 0))
+
+        def _show_mode() -> None:
+            selected = mode_var.get()
+            for frame in mode_frames.values():
+                frame.pack_forget()
+            frame = mode_frames.get(selected, command_frame)
+            frame.pack(fill=tk.BOTH, expand=True)
+            if frame is command_frame:
+                command_entry.focus_set()
+            elif frame is code_frame:
+                code_text.focus_set()
+            else:
+                window.focus_set()
+
+        for label, value in (
+            ("Command sequence", "commands"),
+            ("Full macro code", "code"),
+            ("Library macro", "library"),
+        ):
+            tk.Radiobutton(mode_frame, text=label, variable=mode_var, value=value, command=_show_mode).pack(
+                anchor="w"
+            )
+
+        content_frame = tk.Frame(window, padx=10, pady=10)
+        content_frame.pack(fill=tk.BOTH, expand=True)
+
+        # Command sequence input ------------------------------------------------
+        command_frame = tk.Frame(content_frame)
+        tk.Label(
+            command_frame,
+            text=(
+                "Enter space-separated commands."
+                " Use parameters like 'subtract_background radius=50'."
+            ),
+            wraplength=560,
+            justify=tk.LEFT,
+        ).pack(fill=tk.X, pady=(0, 5))
+        command_entry = tk.Entry(command_frame, textvariable=commands_var)
+        command_entry.pack(fill=tk.X, expand=True)
+
+        # Full macro code input -------------------------------------------------
+        code_frame = tk.Frame(content_frame)
+        tk.Label(
+            code_frame,
+            text=(
+                "Paste the complete Fiji macro code."
+                " Template placeholders such as {input_path} are supported."
+            ),
+            wraplength=560,
+            justify=tk.LEFT,
+        ).pack(fill=tk.X, pady=(0, 5))
+        code_text = scrolledtext.ScrolledText(code_frame, wrap=tk.WORD)
+        code_text.insert("1.0", self.macro_code_value)
+        code_text.pack(fill=tk.BOTH, expand=True)
+
+        # Macro library selection ----------------------------------------------
+        library_frame = tk.Frame(content_frame)
+        tk.Label(
+            library_frame,
+            text=(
+                "Select a macro template from the bundled library."
+                " The template will be formatted with document details at runtime."
+            ),
+            wraplength=560,
+            justify=tk.LEFT,
+        ).pack(fill=tk.X, pady=(0, 5))
+        if library_names:
+            tk.OptionMenu(library_frame, library_var, *library_names).pack(anchor="w")
+        else:
+            tk.Label(
+                library_frame,
+                text="No library macros available.",
+                fg="red",
+            ).pack(anchor="w")
+
+        mode_frames = {
+            "commands": command_frame,
+            "code": code_frame,
+            "library": library_frame,
+        }
+
+        window.focus_set()
+        _show_mode()
+
+        button_frame = tk.Frame(window, pady=10)
+        button_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
+
+        def _apply() -> None:
+            self.macro_mode_var.set(mode_var.get())
+            self.macro_commands_var.set(commands_var.get().strip())
+            self.macro_code_value = code_text.get("1.0", tk.END).strip()
+            if library_names:
+                self.macro_library_var.set(library_var.get().strip())
+            else:
+                self.macro_library_var.set("")
+            self._update_macro_summary()
+            window.destroy()
+
+        tk.Button(button_frame, text="Cancel", command=window.destroy).pack(side=tk.RIGHT, padx=(5, 0))
+        tk.Button(button_frame, text="Save", command=_apply).pack(side=tk.RIGHT)
+
+    def _update_macro_summary(self) -> None:
+        mode = self.macro_mode_var.get()
+        if mode == "commands":
+            value = self.macro_commands_var.get().strip()
+            summary = value or "(none)"
+            text = f"Commands: {summary}"
+        elif mode == "code":
+            length = len(self.macro_code_value.strip())
+            summary = f"{length} character(s)" if length else "(none)"
+            text = f"Macro code: {summary}"
+        else:
+            name = self.macro_library_var.get().strip()
+            summary = name or "(none selected)"
+            text = f"Library macro: {summary}"
+        self.macro_summary_var.set(text)
+
     # ------------------------------------------------------------------
     # Path utilities
     # ------------------------------------------------------------------
@@ -233,6 +424,19 @@ class FijiProcessorGUI:
         path = filedialog.askopenfilename(initialdir=initial, title="Select file")
         if path:
             variable.set(path)
+
+    def _auto_detect_fiji(self) -> None:
+        detected_path = find_fiji()
+        if detected_path:
+            self.fiji_path_var.set(detected_path)
+            self._log(f"Detected Fiji executable: {detected_path}")
+            messagebox.showinfo("Fiji detected", f"Fiji executable found at:\n{detected_path}")
+        else:
+            messagebox.showwarning(
+                "Fiji not found",
+                "Unable to automatically locate the Fiji executable."
+                "\nPlease specify the path manually.",
+            )
 
     # ------------------------------------------------------------------
     # Keyword & ROI helpers
@@ -351,14 +555,18 @@ class FijiProcessorGUI:
             keywords[0] if len(keywords) == 1 else list(keywords)
         )
 
-        commands = self.commands_var.get().strip() or None
+        try:
+            macro_input = self._get_macro_input()
+        except ValueError as exc:
+            messagebox.showerror("Macro configuration", str(exc))
+            return
 
         processor = self._get_processor()
 
         args = dict(
             base_path=os.path.abspath(os.path.expanduser(base_path)),
             keyword=keyword_input,
-            macro_commands=commands,
+            macro_commands=macro_input,
             options=options,
             verbose=self.verbose_var.get(),
         )
@@ -446,6 +654,25 @@ class FijiProcessorGUI:
         options.secondary_filter = secondary or None
 
         return options
+
+    def _get_macro_input(self) -> Optional[str]:
+        mode = self.macro_mode_var.get()
+        if mode == "commands":
+            value = self.macro_commands_var.get().strip()
+            return value or None
+        if mode == "code":
+            value = self.macro_code_value.strip()
+            return value or None
+        if mode == "library":
+            name = self.macro_library_var.get().strip()
+            if not name:
+                return None
+            if name not in MACROS_LIB:
+                raise ValueError(
+                    f"Macro '{name}' was not found in the bundled macro library."
+                )
+            return MACROS_LIB[name]
+        raise ValueError(f"Unsupported macro mode: {mode}")
 
     def _get_processor(self) -> CoreProcessor:
         if self._processor is None:
