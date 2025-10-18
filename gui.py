@@ -1,5 +1,8 @@
 """Graphical user interface for the Fiji automated base analysis toolkit."""
 
+# cd /Users/savvaarutsev/Documents/Проекты/Cod_Diplom/Raw_Data_Analysis/Fiji_Automated_Base_Analysis
+# /opt/homebrew/bin/python3 gui.py
+
 from __future__ import annotations
 
 import os

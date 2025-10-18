@@ -14,8 +14,6 @@ saveAs("Tiff", "{output_dir_native}/{file_stem}_MIP");
 run("Split Channels");
 img_list = getList("image.titles");
 run("Set Measurements...", "area mean min max std integrated redirect=None decimal=3");
-roiManager("Reset");
-roiManager("Open", {document_name}.roi);
 run("Select None");
 
 for (i = 0; i < img_list.length; i++) {{
