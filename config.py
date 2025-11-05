@@ -25,13 +25,13 @@ class FileConfig:
     """Configuration for supported files and ROI discovery."""
 
     supported_extensions: Sequence[str] = field(
-        default_factory=lambda: [".tif", ".tiff", ".ims", ".czi", ".nd2"]
+        default_factory=lambda: [".tif", ".tiff", ".ims", ".czi", ".nd2",".vsi"]
     )
     roi_search_templates: Sequence[str] = field(
         default_factory=lambda: ["{name}.roi", "{name}.zip", "RoiSet_{name}.zip"]
     )
     bioformats_extensions: Sequence[str] = field(
-        default_factory=lambda: [".ims", ".czi", ".nd2", ".lsm", ".oib", ".oif"]
+        default_factory=lambda: [".ims", ".czi", ".nd2", ".lsm", ".oib", ".oif",".vsi"]
     )
 
 
