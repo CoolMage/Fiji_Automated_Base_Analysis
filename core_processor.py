@@ -14,7 +14,7 @@ from datetime import datetime
 
 from config import FileConfig, ProcessingConfig
 from utils.general.fiji_utils import find_fiji, validate_fiji_path
-from utils.general.file_utils import normalize_path, convert_path_for_fiji, is_bioformats_file
+from utils.general.file_utils import normalize_path, convert_path_for_fiji, is_bioformats_file, extract_by_mask
 from utils.general.macro_builder import MacroBuilder, ImageData, MacroCommand
 from utils.general.macros_operation import run_fiji_macro
 
@@ -46,6 +46,8 @@ class ProcessingOptions:
     measurement_summary_prefix: str = "measurements_summary"
     generate_measurement_summary: bool = True
     roi_search_templates: Optional[Sequence[str]] = None
+    # Mapping of placeholder name -> X/Y mask string for filename extraction
+    custom_name_patterns: Optional[Dict[str, str]] = None
 
 
 class CommandLibrary:
@@ -574,6 +576,19 @@ class CoreProcessor:
             roi_paths_native=roi_paths_native,
             document_name=doc.filename,
         )
+
+        # Compute user-defined placeholders from filename using provided masks
+        if options.custom_name_patterns:
+            custom_values: Dict[str, Any] = {}
+            for name, mask in options.custom_name_patterns.items():
+                try:
+                    value = extract_by_mask(doc.filename, mask)
+                except Exception:
+                    value = None
+                if value is not None:
+                    custom_values[name] = value
+            if custom_values:
+                image_data.custom_placeholders = custom_values
 
         # Set output path if saving processed files
         if options.save_processed_files:

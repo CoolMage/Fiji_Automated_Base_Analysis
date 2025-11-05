@@ -25,6 +25,8 @@ class ImageData:
     output_path_native: str = ""
     measurements_path_native: str = ""
     document_name: Optional[str] = None
+    # User-defined placeholder values injected into the template context
+    custom_placeholders: Optional[Dict[str, Any]] = None
 
 
 @dataclass
@@ -402,6 +404,16 @@ class MacroBuilder:
             "measurements_dir_fiji_slash": _ensure_trailing_slash(meas_dir_fiji),
             "measurements_dir_native": meas_dir_native,
         }
+
+        # Merge user-defined placeholders (if provided)
+        if image_data.custom_placeholders:
+            for key, value in image_data.custom_placeholders.items():
+                # Only add if key does not collide with built-ins; users can override if needed
+                if key not in context:
+                    context[key] = value
+                else:
+                    # Allow override to support intentional replacement
+                    context[key] = value
 
         return context
     

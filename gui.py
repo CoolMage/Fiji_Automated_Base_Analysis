@@ -139,6 +139,30 @@ class FijiProcessorGUI:
 
         roi_frame.grid_rowconfigure(1, weight=1)
 
+        # Custom filename extractors -----------------------------------------
+        extract_frame = tk.LabelFrame(main_frame, text="Custom Filename Placeholders", padx=10, pady=10)
+        extract_frame.pack(fill=tk.BOTH, expand=False, pady=(0, 10))
+
+        tk.Label(extract_frame, text="Name (used as {name} in macro)").grid(row=0, column=0, sticky="w")
+        tk.Label(extract_frame, text="Mask (X=digits, Y=letters)").grid(row=0, column=1, sticky="w")
+
+        self.extract_name_var = tk.StringVar()
+        self.extract_mask_var = tk.StringVar()
+        name_entry = tk.Entry(extract_frame, textvariable=self.extract_name_var)
+        mask_entry = tk.Entry(extract_frame, textvariable=self.extract_mask_var)
+        name_entry.grid(row=1, column=0, sticky="we", padx=(0,5))
+        mask_entry.grid(row=1, column=1, sticky="we")
+
+        tk.Button(extract_frame, text="Add", command=self._add_custom_extractor).grid(row=1, column=2, padx=(5,0))
+        tk.Button(extract_frame, text="Remove Selected", command=self._remove_selected_extractor).grid(row=1, column=3, padx=(5,0))
+
+        extract_frame.grid_columnconfigure(0, weight=1)
+        extract_frame.grid_columnconfigure(1, weight=2)
+
+        self.extract_listbox = tk.Listbox(extract_frame, height=4, selectmode=tk.EXTENDED)
+        self.extract_listbox.grid(row=2, column=0, columnspan=4, sticky="nsew", pady=(5, 0))
+        extract_frame.grid_rowconfigure(2, weight=1)
+
         # Processing options -------------------------------------------------
         options_frame = tk.LabelFrame(main_frame, text="Processing Options", padx=10, pady=10)
         options_frame.pack(fill=tk.BOTH, expand=False, pady=(0, 10))
@@ -659,6 +683,25 @@ class FijiProcessorGUI:
             text.insert(tk.END, f"{names}\n")
             text.insert(tk.END, f"  {description}\n\n")
 
+        # User-defined placeholders info
+        custom_map = {}
+        # Safely read current custom extractors if listbox exists
+        try:
+            for idx in range(self.extract_listbox.size()):
+                entry = self.extract_listbox.get(idx)
+                if "=" in entry:
+                    name, mask = entry.split("=", 1)
+                    custom_map[name.strip()] = mask.strip()
+        except Exception:
+            custom_map = {}
+
+        text.insert(tk.END, "User-defined placeholders (from filename masks):\n")
+        if custom_map:
+            for name, mask in custom_map.items():
+                text.insert(tk.END, f"  {{{name}}}  — mask: {mask}\n")
+        else:
+            text.insert(tk.END, "  (none configured)\n")
+
         text.configure(state="disabled")
 
     def _run_processing(self) -> None:
@@ -760,6 +803,19 @@ class FijiProcessorGUI:
     def _collect_listbox_values(self, listbox: tk.Listbox) -> List[str]:
         return [listbox.get(idx) for idx in range(listbox.size())]
 
+    def _collect_extractors(self) -> dict:
+        """Collect custom extractor entries from listbox into a dict name->mask."""
+        mapping = {}
+        for idx in range(self.extract_listbox.size()):
+            entry = self.extract_listbox.get(idx)
+            if "=" in entry:
+                name, mask = entry.split("=", 1)
+                name = name.strip()
+                mask = mask.strip()
+                if name and mask:
+                    mapping[name] = mask
+        return mapping
+
     def _gather_processing_options(self) -> ProcessingOptions:
         roi_templates = self._collect_listbox_values(self.roi_listbox) or None
 
@@ -779,7 +835,34 @@ class FijiProcessorGUI:
         secondary = self.secondary_filter_var.get().strip()
         options.secondary_filter = secondary or None
 
+        # Attach custom extractors
+        custom_map = self._collect_extractors()
+        options.custom_name_patterns = custom_map or None
+
         return options
+
+    # ------------------------------------------------------------------
+    # Custom extractor helpers
+    # ------------------------------------------------------------------
+    def _add_custom_extractor(self) -> None:
+        name = (self.extract_name_var.get() or "").strip()
+        mask = (self.extract_mask_var.get() or "").strip()
+        if not name or not mask:
+            return
+        # Ensure no spaces and braces in name to be safe for {name}
+        if any(ch in name for ch in " {}\t\n"):
+            messagebox.showwarning("Invalid name", "Name must not contain spaces or braces.")
+            return
+        # Insert or replace existing of same name
+        existing_indices = [i for i in range(self.extract_listbox.size()) if self.extract_listbox.get(i).split("=",1)[0].strip() == name]
+        for idx in reversed(existing_indices):
+            self.extract_listbox.delete(idx)
+        self.extract_listbox.insert(tk.END, f"{name}={mask}")
+        self.extract_name_var.set("")
+        self.extract_mask_var.set("")
+
+    def _remove_selected_extractor(self) -> None:
+        self._remove_selected(self.extract_listbox)
 
     def _get_macro_input(self) -> Optional[str]:
         mode = self.macro_mode_var.get()
