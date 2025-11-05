@@ -14,7 +14,8 @@ from utils.general.fiji_utils import validate_fiji_path
 def run_fiji_macro(fiji_path: str, macro_code: str, 
                   timeout: int = 300, 
                   additional_args: Optional[list] = None,
-                  verbose: bool = True) -> Dict[str, Any]:
+                  verbose: bool = True,
+                  cancel_event: Optional[Any] = None) -> Dict[str, Any]:
     """
     Run a Fiji macro with cross-platform support.
     
@@ -46,36 +47,70 @@ def run_fiji_macro(fiji_path: str, macro_code: str,
         cmd = [fiji_path, "-macro", macro_file_path]
         if additional_args:
             cmd.extend(additional_args)
-        
-        # Platform-specific adjustments
+
+        # Launch process using Popen to allow cancellation
         system = platform.system().lower()
-        if system == "windows":
-            # On Windows, use shell=True for better compatibility
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-                shell=True
-            )
-        else:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=timeout
-            )
-        
+        use_shell = system == "windows"
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            shell=use_shell
+        )
+
+        # Poll loop with cancellation and timeout handling
+        stdout_data = ""
+        stderr_data = ""
+        # We'll use communicate with short timeouts to accumulate output
+        remaining = timeout
+        step = 0.2
+        while True:
+            if cancel_event is not None and getattr(cancel_event, "is_set", lambda: False)():
+                try:
+                    proc.terminate()
+                except Exception:
+                    pass
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+                return {
+                    "success": False,
+                    "error": "Cancelled by user",
+                    "stdout": stdout_data,
+                    "stderr": stderr_data,
+                }
+
+            try:
+                out, err = proc.communicate(timeout=step)
+                stdout_data += out or ""
+                stderr_data += err or ""
+                break
+            except subprocess.TimeoutExpired:
+                remaining -= step
+                if remaining <= 0:
+                    try:
+                        proc.kill()
+                    except Exception:
+                        pass
+                    return {
+                        "success": False,
+                        "error": f"Error: Fiji process timed out after {timeout} seconds",
+                        "stdout": stdout_data,
+                        "stderr": stderr_data,
+                    }
+
         if verbose:
-            print("Fiji Output:\n", result.stdout)
-            if result.stderr:
-                print("Fiji Errors:\n", result.stderr)
-        
+            print("Fiji Output:\n", stdout_data)
+            if stderr_data:
+                print("Fiji Errors:\n", stderr_data)
+
         return {
-            "success": result.returncode == 0,
-            "returncode": result.returncode,
-            "stdout": result.stdout,
-            "stderr": result.stderr
+            "success": proc.returncode == 0,
+            "returncode": proc.returncode,
+            "stdout": stdout_data,
+            "stderr": stderr_data
         }
         
     except subprocess.TimeoutExpired:

@@ -354,6 +354,10 @@ class MacroBuilder:
         meas_dir_native = os.path.dirname(image_data.measurements_path or "")
         meas_dir_fiji = _to_fiji_path(meas_dir_native)
 
+        # Normalize filename stem by replacing dots with underscores
+        stem_original = image_data.document_name or ""
+        stem_normalized = stem_original.replace('.', '_').replace(' ', '_') if stem_original else ""
+
         context: Dict[str, Any] = {
             # Input paths
             "input_path": image_data.input_path,
@@ -381,9 +385,9 @@ class MacroBuilder:
             "out_csv": image_data.measurements_path,
             "CSV": image_data.measurements_path,
 
-            # Document metadata
-            "document_name": image_data.document_name or "",
-            "file_stem": image_data.document_name or "",
+            # Document metadata (normalized: replace extra dots with underscores)
+            "document_name": stem_normalized,
+            "file_stem": stem_normalized,
 
             # ROI helpers
             "roi_paths": roi_paths,

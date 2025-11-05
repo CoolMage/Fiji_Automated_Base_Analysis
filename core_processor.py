@@ -395,6 +395,7 @@ class CoreProcessor:
         macro_commands: Union[str, List[str], None] = None,
         options: Optional[ProcessingOptions] = None,
         verbose: bool = True,
+        cancel_event: Optional[Any] = None,
     ) -> Dict[str, Any]:
         """
         Process documents by keyword with specified macro commands.
@@ -467,6 +468,11 @@ class CoreProcessor:
 
         # Process each document
         for doc in documents:
+            # Check cancellation before starting the next document
+            if cancel_event is not None and getattr(cancel_event, "is_set", lambda: False)():
+                if verbose:
+                    print("Processing cancelled by user.")
+                break
             expected_csv_path: Optional[str] = None
             if options.save_measurements_csv:
                 expected_csv_path = os.path.join(
@@ -480,6 +486,7 @@ class CoreProcessor:
                     verbose,
                     processed_dir,
                     measurements_dir,
+                    cancel_event=cancel_event,
                 )
 
                 if result["success"]:
@@ -551,6 +558,7 @@ class CoreProcessor:
         verbose: bool,
         processed_dir: Optional[str] = None,
         measurements_dir: Optional[str] = None,
+        cancel_event: Optional[Any] = None,
     ) -> Dict[str, Any]:
         """Process a single document."""
         if verbose:
@@ -718,7 +726,7 @@ class CoreProcessor:
             print("-" * 50)
         
         # Run macro
-        result = run_fiji_macro(self.fiji_path, macro_code, verbose=verbose)
+        result = run_fiji_macro(self.fiji_path, macro_code, verbose=verbose, cancel_event=cancel_event)
         
         return {
             "success": result["success"],

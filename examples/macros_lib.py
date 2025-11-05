@@ -1,5 +1,25 @@
 
 MACROS_LIB = {
+    "Split_Channels_in_dif_dir" : '''
+// --- Open & prepare (Bio-Formats + Z-MIP) ---
+setBatchMode(true);
+run("Bio-Formats Importer", "open=[{img_path_fiji}] autoscale color_mode=Default rois_import=[ROI manager] view=Hyperstack stack_order=XYCZT");
+
+// --- Split and loop channels ---
+run("Split Channels");
+img_list = getList("image.titles");
+
+for (i = 0; i < img_list.length; i++) {{
+    selectWindow(img_list[i]);
+    chTitle = getTitle();
+    if (!File.exists("{output_dir_native}/{custom_name}")) File.makeDirectory("{output_dir_native}/{custom_name}");
+    saveAs("Tiff", "{output_dir_native}/{custom_name}/" + "{file_stem}" + "_ch" + (i+1) + ".tif");
+}}
+
+run("Close All");
+run("Quit");
+''',
+
     "mip_all_image_measure_for_channel" : '''
 // --- Open & prepare (Bio-Formats + Z-MIP) ---
 setBatchMode(true);

@@ -29,6 +29,7 @@ class FijiProcessorGUI:
 
         self._processor: Optional[CoreProcessor] = None
         self._worker_thread: Optional[threading.Thread] = None
+        self._cancel_event: Optional[threading.Event] = None
         self._log_queue: "queue.Queue[str]" = queue.Queue()
 
         self.macro_mode_var = tk.StringVar(value="commands")
@@ -237,6 +238,9 @@ class FijiProcessorGUI:
 
         self.run_button = tk.Button(action_frame, text="Run Processing", command=self._run_processing)
         self.run_button.pack(side=tk.RIGHT)
+        self.stop_button = tk.Button(action_frame, text="Stop", command=self._stop_processing)
+        self.stop_button.pack(side=tk.RIGHT, padx=(5, 5))
+        self.stop_button.configure(state=tk.DISABLED)
 
         # Log output ---------------------------------------------------------
         log_frame = tk.LabelFrame(main_frame, text="Log", padx=10, pady=10)
@@ -745,7 +749,7 @@ class FijiProcessorGUI:
 
         def worker() -> None:
             try:
-                result = processor.process_documents(**args)
+                result = processor.process_documents(**args, cancel_event=self._cancel_event)
                 if result.get("success"):
                     self._log("✅ Processing completed successfully!")
                     processed = result.get("processed_documents", [])
@@ -794,8 +798,16 @@ class FijiProcessorGUI:
             finally:
                 self._set_running(False)
 
+        # Prepare/clear cancel event
+        self._cancel_event = threading.Event()
         self._worker_thread = threading.Thread(target=worker, daemon=True)
         self._worker_thread.start()
+
+    def _stop_processing(self) -> None:
+        if self._worker_thread and self._worker_thread.is_alive():
+            if self._cancel_event is not None:
+                self._cancel_event.set()
+            self._log("Cancellation requested. Attempting to stop...")
 
     # ------------------------------------------------------------------
     # Helpers
@@ -900,6 +912,8 @@ class FijiProcessorGUI:
         state = tk.DISABLED if running else tk.NORMAL
         for widget in (self.run_button, self.validate_button, self.list_commands_button):
             widget.configure(state=state)
+        # Stop button enabled only while running
+        self.stop_button.configure(state=(tk.NORMAL if running else tk.DISABLED))
         if not running:
             self._log("\n")
 
