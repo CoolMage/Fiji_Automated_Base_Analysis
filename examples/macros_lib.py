@@ -12,8 +12,8 @@ img_list = getList("image.titles");
 for (i = 0; i < img_list.length; i++) {{
     selectWindow(img_list[i]);
     chTitle = getTitle();
-    if (!File.exists("{output_dir_native}/{custom_name}")) File.makeDirectory("{output_dir_native}/{custom_name}");
-    saveAs("Tiff", "{output_dir_native}/{custom_name}/" + "{file_stem}" + "_ch" + (i+1) + ".tif");
+    if (!File.exists("{output_dir_native}/{file_stem}")) File.makeDirectory("{output_dir_native}/{file_stem}");
+    saveAs("Tiff", "{output_dir_native}/{file_stem}/" + "{file_stem}" + "_ch" + (i+1) + ".tif");
 }}
 
 run("Close All");
