@@ -12,8 +12,8 @@ img_list = getList("image.titles");
 for (i = 0; i < img_list.length; i++) {{
     selectWindow(img_list[i]);
     chTitle = getTitle();
-    if (!File.exists("{output_dir_native}/{file_stem}")) File.makeDirectory("{output_dir_native}/{file_stem}");
-    saveAs("Tiff", "{output_dir_native}/{file_stem}/" + "{file_stem}" + "_ch" + (i+1) + ".tif");
+    if (!File.exists("{output_dir_fiji_slash}{file_stem}")) File.makeDirectory("{output_dir_fiji_slash}{file_stem}");
+    saveAs("Tiff", "{output_dir_fiji_slash}{file_stem}/" + "{file_stem}" + "_ch" + (i+1) + ".tif");
 }}
 
 run("Close All");
@@ -28,7 +28,7 @@ origTitle = getTitle();
 run("Z Project...", "projection=[Max Intensity]");
 selectWindow(origTitle); run("Close");
 rename("{file_stem}_MIP");
-saveAs("Tiff", "{output_dir_native}/{file_stem}_MIP");
+saveAs("Tiff", "{output_dir_fiji_slash}{file_stem}_MIP");
 
 // --- Split and loop channels ---
 run("Split Channels");
@@ -213,7 +213,7 @@ setThreshold(minThr, maxVal);
 setOption("BlackBackground", false);
 run("Convert to Mask");  // делаем бинарную маску из порога
 
-saveAs("Tiff", "{output_dir_native}/{document_name}_ch2z2_thr1350");
+saveAs("Tiff", "{output_dir_fiji_slash}{document_name}_ch2z2_thr1350");
 
 // --- Analyze Particles + сохранить ROIs ---
 run("Set Measurements...", "area mean min max std integrated centroid feret's redirect=None decimal=3");
@@ -224,7 +224,7 @@ run("Analyze Particles...", "size=25-1200 circularity=0.30-1.00 clear include ad
 saveAs("Results", "{out_csv}");
 
 // --- Save ROIs as ZIP (имя документа + пометка) ---
-roiZip = "{output_dir_native}/{document_name}_ch2z2_thr400_part15-750_ROIs.zip";
+roiZip = "{output_dir_fiji_slash}{document_name}_ch2z2_thr400_part15-750_ROIs.zip";
 roiManager("Save", roiZip);
 
 // --- Cleanup ---
@@ -266,7 +266,7 @@ setThreshold(minThr, maxVal);
 setOption("BlackBackground", false);
 run("Convert to Mask");  // делаем бинарную маску из порога
 
-saveAs("Tiff", "{output_dir_native}/{document_name}_ch2z2_thr1350_CLAHE");
+saveAs("Tiff", "{output_dir_fiji_slash}{document_name}_ch2z2_thr1350_CLAHE");
 
 // --- Load ROIs once ---
 roiManager("Reset");
@@ -293,7 +293,7 @@ run("Analyze Particles...", "size=25-1200 circularity=0.30-1.00 clear include ad
 saveAs("Results", "{out_csv}");
 
 // --- Save ROIs as ZIP (имя документа + пометка) ---
-roiZip = "{output_dir_native}/{document_name}_ch2z2_thr1350_part25-1200_CLAHE_ROIs.zip";
+roiZip = "{output_dir_fiji_slash}{document_name}_ch2z2_thr1350_part25-1200_CLAHE_ROIs.zip";
 roiManager("Save", roiZip);
 
 // --- Cleanup ---
