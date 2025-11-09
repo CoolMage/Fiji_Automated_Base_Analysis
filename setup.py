@@ -60,6 +60,9 @@ setup(
         "console_scripts": [
             "fiji-document-processor=main:main",
         ],
+        "gui_scripts": [
+            "fiji-gui=gui:main",
+        ],
     },
     keywords="fiji imagej image processing automation cross-platform bioimaging",
     project_urls={

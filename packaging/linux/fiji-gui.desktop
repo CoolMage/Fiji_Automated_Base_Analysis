@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Fiji Automated Analysis GUI
+Comment=Launch the Fiji automated processing GUI
+Exec=/opt/FijiProcessorGUI/FijiProcessorGUI
+Icon=/opt/FijiProcessorGUI/icons/fiji.png
+Terminal=false
+Categories=Science;Graphics;
+StartupNotify=true
