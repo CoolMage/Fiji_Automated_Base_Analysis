@@ -27,6 +27,29 @@ For editable installs (optional):
 pip install -e .
 ```
 
+### Launching the GUI after installation
+
+Installing the project with pip now registers both the command-line interface
+(`fiji-document-processor`) and the graphical application (`fiji-gui`). The
+latter is defined as a `gui_script`, so Windows users receive a launcher that
+does not spawn a console window.
+
+```bash
+# Install globally
+pip install .
+
+# or inside a virtual environment
+python -m venv .venv
+. .venv/bin/activate  # On Windows use `.venv\\Scripts\\activate`
+pip install .
+
+# Launch the GUI from your shell or operating-system app launcher
+fiji-gui
+```
+
+The entry point simply forwards to `gui.main()`, so it will pick up new
+functionality automatically as you iterate on the codebase.
+
 ## Expected directory layout
 
 Point the processor at the root directory that contains your study folders.
@@ -221,6 +244,35 @@ variables before execution. The most common placeholders are:
 
 Include any other macro logic you need—the template is executed verbatim, so
 remember to add cleanup commands such as `run("Quit");` when necessary.
+
+
+## Building standalone desktop apps
+
+If your users do not have Python installed, create self-contained bundles with
+[PyInstaller](https://pyinstaller.org/). A ready-to-use spec file lives under
+`packaging/fiji_gui.spec` and collects all runtime resources required by the GUI.
+
+```bash
+pip install pyinstaller
+pyinstaller packaging/fiji_gui.spec
+```
+
+The resulting artifacts appear in `dist/FijiProcessorGUI/`:
+
+- **Windows** – wrap the folder into an installer (MSI/EXE) and add a shortcut
+  that points to `FijiProcessorGUI.exe`. Inno Setup and WiX Toolset both work.
+- **macOS** – the spec enables `argv_emulation`, so the `FijiProcessorGUI.app`
+  bundle behaves like a native application. Codesign and notarize before
+  distribution if required by your organization.
+- **Linux** – create an AppImage or copy the folder into `/opt`. Ship the
+  template desktop entry located at `packaging/linux/fiji-gui.desktop`; update
+  the `Exec` and `Icon` paths to match your installation root and place the file
+  under `~/.local/share/applications/`.
+
+Because the spec runs on the current platform, build on each operating system
+you plan to support. The Fiji auto-discovery helpers are bundled with the app,
+so users can rely on automatic detection or select a custom executable at
+runtime.
 
 
 ## Running the built-in smoke tests
