@@ -27,6 +27,25 @@ For editable installs (optional):
 pip install -e .
 ```
 
+## Launching the GUI
+
+If you prefer using the graphical interface, double-click the launcher that
+matches your operating system from the project root:
+
+- **Windows:** `run_gui.bat`
+- **macOS/Linux:** `run_gui.sh`
+
+Both launchers will ensure that the dependencies listed in
+`requirements.txt` are installed before opening `gui.py`. You can also run
+them from a terminal:
+
+```bash
+./run_gui.sh
+
+# or on Windows
+run_gui.bat
+```
+
 ## Expected directory layout
 
 Point the processor at the root directory that contains your study folders.
