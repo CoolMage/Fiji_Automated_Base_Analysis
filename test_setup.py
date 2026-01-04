@@ -35,6 +35,13 @@ def test_imports():
         return False
 
     try:
+        from utils.general.kymo_utils import find_kymograph_direct, validate_kymograph_direct_path
+        print("✅ KymographDirect utils imported successfully")
+    except ImportError as e:
+        print(f"❌ KymographDirect utils import failed: {e}")
+        return False
+
+    try:
         from utils.general.file_utils import normalize_path
         print("✅ File utils imported successfully")
     except ImportError as e:
@@ -103,6 +110,30 @@ def test_fiji_detection():
         return True
     except Exception as e:
         print(f"❌ Fiji detection test failed: {e}")
+        return False
+
+def test_kymograph_direct_detection():
+    """Test KymographDirect detection."""
+    print("\nTesting KymographDirect detection...")
+
+    try:
+        from utils.general.kymo_utils import find_kymograph_direct, validate_kymograph_direct_path
+
+        kymo_path = find_kymograph_direct()
+        if kymo_path:
+            print(f"✅ KymographDirect found at: {kymo_path}")
+
+            is_valid = validate_kymograph_direct_path(kymo_path)
+            if is_valid:
+                print("✅ KymographDirect path is valid")
+            else:
+                print("⚠️  KymographDirect path is invalid (application may not be properly installed)")
+        else:
+            print("⚠️  KymographDirect not found (this is expected if it is not installed)")
+
+        return True
+    except Exception as e:
+        print(f"❌ KymographDirect detection test failed: {e}")
         return False
 
 def test_macro_builder():
