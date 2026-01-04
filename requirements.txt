@@ -1,8 +1,11 @@
 # Core dependencies
 pathlib2>=2.3.0; python_version < "3.4"
+numpy>=1.24.0
+scikit-image>=0.22.0
+roifile>=2023.5.26
 
 # Optional dependencies for enhanced functionality
 # pandas>=1.3.0  # For data analysis and reporting
-# numpy>=1.20.0  # For numerical operations
+# lumicks.pylake>=1.6.1  # For Lumicks-based greedy kymograph tracking
 # matplotlib>=3.3.0  # For plotting and visualization
 # pillow>=8.0.0  # For image manipulation
