@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import os
 import threading
 import queue
@@ -15,6 +16,7 @@ from tkinter import filedialog, messagebox
 from tkinter import scrolledtext
 
 from core_processor import CommandLibrary, CoreProcessor, ProcessingOptions
+from kymograph_processing import KymographProcessingOptions, KymographProcessor
 from examples.macros_lib import MACROS_LIB
 from utils.general.fiji_utils import find_fiji
 from utils.general.kymo_utils import find_kymograph_direct, validate_kymograph_direct_path
@@ -33,7 +35,14 @@ class FijiProcessorGUI:
         self._cancel_event: Optional[threading.Event] = None
         self._log_queue: "queue.Queue[str]" = queue.Queue()
 
-        self.kymograph_method_var = tk.StringVar(value="KymographDirect")
+        # Track whether the UI should run the standard macro flow or the dedicated kymograph pipeline.
+        self.processing_mode_var = tk.StringVar(value="standard")
+        self.kymograph_method_var = tk.StringVar(value="Lumicks")
+        self.kymograph_channels_var = tk.StringVar()
+        self.kymograph_roi_templates_var = tk.StringVar()
+        self.tracker_min_length_var = tk.StringVar(value="5")
+        self.tracker_sensitivity_var = tk.StringVar(value="0.0")
+        self.save_kymographs_var = tk.BooleanVar(value=True)
 
         self.macro_mode_var = tk.StringVar(value="commands")
         self.macro_commands_var = tk.StringVar()
@@ -97,31 +106,6 @@ class FijiProcessorGUI:
         tk.Button(path_frame, text="Auto-detect", command=self._auto_detect_fiji).grid(
             row=1, column=3, padx=(5, 0)
         )
-
-        tk.Label(path_frame, text="Kymograph method:").grid(row=2, column=0, sticky="w")
-        method_menu = tk.OptionMenu(
-            path_frame,
-            self.kymograph_method_var,
-            "KymographDirect",
-            "Lumicks",
-            command=lambda *_: self._update_kymograph_method_state(),
-        )
-        method_menu.grid(row=2, column=1, sticky="w")
-
-        tk.Label(path_frame, text="KymographDirect executable:").grid(row=3, column=0, sticky="w")
-        self.kymo_direct_entry = tk.Entry(path_frame, textvariable=self.kymo_direct_path_var)
-        self.kymo_direct_entry.grid(row=3, column=1, sticky="we", padx=(5, 5))
-        path_frame.grid_columnconfigure(1, weight=1)
-        self.kymo_direct_browse_button = tk.Button(
-            path_frame, text="Browse", command=lambda: self._browse_file(self.kymo_direct_path_var)
-        )
-        self.kymo_direct_browse_button.grid(row=3, column=2)
-        self.kymo_direct_auto_button = tk.Button(
-            path_frame, text="Auto-detect KymographDirect", command=self._auto_detect_kymograph_direct
-        )
-        self.kymo_direct_auto_button.grid(row=3, column=3, padx=(5, 0))
-
-        self._update_kymograph_method_state()
 
         # Keyword configuration ---------------------------------------------
         keyword_frame = tk.LabelFrame(main_frame, text="Keywords", padx=10, pady=10)
@@ -247,6 +231,77 @@ class FijiProcessorGUI:
         tk.Checkbutton(
             checkbox_frame, text="Generate measurement summary", variable=self.generate_summary_var
         ).pack(anchor="w")
+
+        # Kymograph processing ----------------------------------------------
+        kymo_frame = tk.LabelFrame(main_frame, text="Kymograph processing", padx=10, pady=10)
+        kymo_frame.pack(fill=tk.BOTH, expand=False, pady=(0, 10))
+
+        tk.Label(kymo_frame, text="Processing mode:").grid(row=0, column=0, sticky="w")
+        tk.Radiobutton(
+            kymo_frame,
+            text="Standard macro workflow",
+            variable=self.processing_mode_var,
+            value="standard",
+            command=self._update_kymograph_method_state,
+        ).grid(row=0, column=1, sticky="w", padx=(5, 5))
+        tk.Radiobutton(
+            kymo_frame,
+            text="Generate kymographs",
+            variable=self.processing_mode_var,
+            value="kymograph",
+            command=self._update_kymograph_method_state,
+        ).grid(row=0, column=2, sticky="w")
+
+        # Allow switching between lumicks tracker and KymographDirect executable.
+        tk.Label(kymo_frame, text="Kymograph method:").grid(row=1, column=0, sticky="w", pady=(5, 0))
+        self.kymograph_method_menu = tk.OptionMenu(
+            kymo_frame,
+            self.kymograph_method_var,
+            "Lumicks",
+            "KymographDirect",
+            command=lambda *_: self._update_kymograph_method_state(),
+        )
+        self.kymograph_method_menu.grid(row=1, column=1, sticky="w", pady=(5, 0))
+
+        # Point to the KymographDirect binary when that method is selected.
+        tk.Label(kymo_frame, text="KymographDirect executable:").grid(row=2, column=0, sticky="w", pady=(5, 0))
+        self.kymo_direct_entry = tk.Entry(kymo_frame, textvariable=self.kymo_direct_path_var)
+        self.kymo_direct_entry.grid(row=2, column=1, sticky="we", padx=(5, 5), pady=(5, 0))
+        kymo_frame.grid_columnconfigure(1, weight=1)
+        self.kymo_direct_browse_button = tk.Button(
+            kymo_frame, text="Browse", command=lambda: self._browse_file(self.kymo_direct_path_var)
+        )
+        self.kymo_direct_browse_button.grid(row=2, column=2, padx=(0, 5), pady=(5, 0))
+        self.kymo_direct_auto_button = tk.Button(
+            kymo_frame, text="Auto-detect KymographDirect", command=self._auto_detect_kymograph_direct
+        )
+        self.kymo_direct_auto_button.grid(row=2, column=3, padx=(0, 0), pady=(5, 0))
+
+        # Restrict processing to specific channels (comma-separated indices).
+        tk.Label(kymo_frame, text="Channels:").grid(row=3, column=0, sticky="w", pady=(5, 0))
+        self.kymo_channels_entry = tk.Entry(kymo_frame, textvariable=self.kymograph_channels_var)
+        self.kymo_channels_entry.grid(row=3, column=1, sticky="we", padx=(5, 5), pady=(5, 0))
+
+        # ROI search patterns mirror the macro workflow templates.
+        tk.Label(kymo_frame, text="ROI template(s):").grid(row=4, column=0, sticky="w", pady=(5, 0))
+        self.kymo_roi_entry = tk.Entry(kymo_frame, textvariable=self.kymograph_roi_templates_var)
+        self.kymo_roi_entry.grid(row=4, column=1, sticky="we", padx=(5, 5), pady=(5, 0))
+
+        # Tracker tuning for lumicks.pylake (or equivalent numeric thresholds).
+        tk.Label(kymo_frame, text="Tracker min length:").grid(row=5, column=0, sticky="w", pady=(5, 0))
+        self.kymo_min_length_entry = tk.Entry(kymo_frame, textvariable=self.tracker_min_length_var, width=12)
+        self.kymo_min_length_entry.grid(row=5, column=1, sticky="w", padx=(5, 5), pady=(5, 0))
+        tk.Label(kymo_frame, text="Tracker sensitivity:").grid(row=6, column=0, sticky="w", pady=(5, 0))
+        self.kymo_sensitivity_entry = tk.Entry(kymo_frame, textvariable=self.tracker_sensitivity_var, width=12)
+        self.kymo_sensitivity_entry.grid(row=6, column=1, sticky="w", padx=(5, 5), pady=(5, 0))
+
+        # Keep the intermediate TIFF kymographs if desired (otherwise the processor cleans them up).
+        self.kymo_save_checkbox = tk.Checkbutton(
+            kymo_frame, text="Save kymographs", variable=self.save_kymographs_var
+        )
+        self.kymo_save_checkbox.grid(row=7, column=0, columnspan=2, sticky="w", pady=(5, 0))
+
+        self._update_kymograph_method_state()
 
         # Action buttons -----------------------------------------------------
         action_frame = tk.Frame(main_frame)
@@ -563,14 +618,27 @@ class FijiProcessorGUI:
             )
 
     def _update_kymograph_method_state(self) -> None:
-        is_kymo_direct = self.kymograph_method_var.get() == "KymographDirect"
-        state = tk.NORMAL if is_kymo_direct else tk.DISABLED
+        is_kymograph = self.processing_mode_var.get() == "kymograph"
+        common_state = tk.NORMAL if is_kymograph else tk.DISABLED
+
+        for widget in (
+            self.kymograph_method_menu,
+            self.kymo_channels_entry,
+            self.kymo_roi_entry,
+            self.kymo_min_length_entry,
+            self.kymo_sensitivity_entry,
+            self.kymo_save_checkbox,
+        ):
+            widget.configure(state=common_state)
+
+        is_kymo_direct = self.kymograph_method_var.get() == "KymographDirect" and is_kymograph
+        direct_state = tk.NORMAL if is_kymo_direct else tk.DISABLED
         for widget in (
             self.kymo_direct_entry,
             self.kymo_direct_browse_button,
             self.kymo_direct_auto_button,
         ):
-            widget.configure(state=state)
+            widget.configure(state=direct_state)
 
     # ------------------------------------------------------------------
     # Keyword & ROI helpers
@@ -607,6 +675,10 @@ class FijiProcessorGUI:
     @staticmethod
     def _split_entries(value: str) -> Iterable[str]:
         return [part.strip() for part in value.split(",") if part.strip()]
+
+    @staticmethod
+    def _lumicks_available() -> bool:
+        return importlib.util.find_spec("lumicks.pylake") is not None
 
     # ------------------------------------------------------------------
     # Logging utilities
@@ -788,26 +860,66 @@ class FijiProcessorGUI:
             messagebox.showwarning("Missing information", "Please add at least one keyword.")
             return
 
-        options = self._gather_processing_options()
         keyword_input: Union[str, Sequence[str]] = (
             keywords[0] if len(keywords) == 1 else list(keywords)
         )
 
-        try:
-            macro_input = self._get_macro_input()
-        except ValueError as exc:
-            messagebox.showerror("Macro configuration", str(exc))
-            return
+        base_path = os.path.abspath(os.path.expanduser(base_path))
+        is_kymograph = self.processing_mode_var.get() == "kymograph"
 
-        processor = self._get_processor()
+        if is_kymograph:
+            try:
+                kymo_options = self._gather_kymograph_options()
+            except ValueError as exc:
+                messagebox.showerror("Kymograph configuration", str(exc))
+                return
 
-        args = dict(
-            base_path=os.path.abspath(os.path.expanduser(base_path)),
-            keyword=keyword_input,
-            macro_commands=macro_input,
-            options=options,
-            verbose=self.verbose_var.get(),
-        )
+            method = (kymo_options.method or "lumicks").lower()
+            if method == "direct":
+                # Fail fast when the supplied KymographDirect path is missing.
+                if not validate_kymograph_direct_path(kymo_options.kymograph_direct_path or ""):
+                    messagebox.showerror(
+                        "KymographDirect path",
+                        "Please provide a valid KymographDirect executable path for direct mode.",
+                    )
+                    return
+            else:
+                # Lumicks.pylake must be installed before launching the worker thread.
+                if not self._lumicks_available():
+                    messagebox.showerror(
+                        "lumicks.pylake missing",
+                        "lumicks.pylake is required for Lumicks-based kymograph tracking.\n"
+                        "Install it via `pip install lumicks.pylake` and try again.",
+                    )
+                    return
+
+            processor = KymographProcessor(
+                fiji_path=self.fiji_path_var.get().strip() or None,
+                kymograph_method=method,
+                kymograph_direct_path=kymo_options.kymograph_direct_path,
+            )
+            args = dict(
+                base_path=base_path,
+                keyword=keyword_input,
+                options=kymo_options,
+                verbose=self.verbose_var.get(),
+            )
+        else:
+            try:
+                macro_input = self._get_macro_input()
+            except ValueError as exc:
+                messagebox.showerror("Macro configuration", str(exc))
+                return
+
+            options = self._gather_processing_options()
+            processor = self._get_processor()
+            args = dict(
+                base_path=base_path,
+                keyword=keyword_input,
+                macro_commands=macro_input,
+                options=options,
+                verbose=self.verbose_var.get(),
+            )
 
         self._log("Starting processing...\n")
         self._set_running(True)
@@ -837,6 +949,9 @@ class FijiProcessorGUI:
                         self._log(
                             f"Measurements recorded for {len(measurements)} document(s)."
                         )
+                    if is_kymograph:
+                        roi_outputs = result.get("roi_outputs") or []
+                        self._log(f"Kymograph ROIs exported: {len(roi_outputs)}")
                     failed = result.get("failed_documents") or []
                     if failed:
                         self._log(
@@ -917,6 +1032,41 @@ class FijiProcessorGUI:
         options.custom_name_patterns = custom_map or None
 
         return options
+
+    def _gather_kymograph_options(self) -> KymographProcessingOptions:
+        channels_raw = self.kymograph_channels_var.get().strip()
+        channels: Optional[List[int]] = None
+        if channels_raw:
+            try:
+                channels = [int(item.strip()) for item in channels_raw.split(",") if item.strip()]
+            except ValueError as exc:
+                raise ValueError("Channels must be a comma-separated list of integers.") from exc
+
+        try:
+            min_length = int(self.tracker_min_length_var.get().strip() or 0)
+        except ValueError as exc:
+            raise ValueError("Tracker min length must be an integer.") from exc
+
+        try:
+            sensitivity = float(self.tracker_sensitivity_var.get().strip() or 0.0)
+        except ValueError as exc:
+            raise ValueError("Tracker sensitivity must be a number.") from exc
+
+        roi_templates_raw = self.kymograph_roi_templates_var.get().strip()
+        roi_templates = (
+            list(self._split_entries(roi_templates_raw)) if roi_templates_raw else self._collect_listbox_values(self.roi_listbox)
+        )
+
+        return KymographProcessingOptions(
+            method="direct" if self.kymograph_method_var.get() == "KymographDirect" else "lumicks",
+            channels=channels,
+            tracker_min_length=min_length,
+            tracker_intensity_threshold=sensitivity,
+            save_intermediate_kymographs=self.save_kymographs_var.get(),
+            kymograph_direct_path=self.kymo_direct_path_var.get().strip() or None,
+            roi_search_templates=roi_templates or None,
+            secondary_filter=self.secondary_filter_var.get().strip() or None,
+        )
 
     # ------------------------------------------------------------------
     # Custom extractor helpers
