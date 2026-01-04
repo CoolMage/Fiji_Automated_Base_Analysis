@@ -17,6 +17,7 @@ from tkinter import scrolledtext
 from core_processor import CommandLibrary, CoreProcessor, ProcessingOptions
 from examples.macros_lib import MACROS_LIB
 from utils.general.fiji_utils import find_fiji
+from utils.general.kymo_utils import find_kymograph_direct, validate_kymograph_direct_path
 
 
 class FijiProcessorGUI:
@@ -31,6 +32,8 @@ class FijiProcessorGUI:
         self._worker_thread: Optional[threading.Thread] = None
         self._cancel_event: Optional[threading.Event] = None
         self._log_queue: "queue.Queue[str]" = queue.Queue()
+
+        self.kymograph_method_var = tk.StringVar(value="KymographDirect")
 
         self.macro_mode_var = tk.StringVar(value="commands")
         self.macro_commands_var = tk.StringVar()
@@ -75,6 +78,7 @@ class FijiProcessorGUI:
 
         self.base_path_var = tk.StringVar()
         self.fiji_path_var = tk.StringVar()
+        self.kymo_direct_path_var = tk.StringVar()
 
         self._add_labeled_entry(
             path_frame,
@@ -93,6 +97,31 @@ class FijiProcessorGUI:
         tk.Button(path_frame, text="Auto-detect", command=self._auto_detect_fiji).grid(
             row=1, column=3, padx=(5, 0)
         )
+
+        tk.Label(path_frame, text="Kymograph method:").grid(row=2, column=0, sticky="w")
+        method_menu = tk.OptionMenu(
+            path_frame,
+            self.kymograph_method_var,
+            "KymographDirect",
+            "Lumicks",
+            command=lambda *_: self._update_kymograph_method_state(),
+        )
+        method_menu.grid(row=2, column=1, sticky="w")
+
+        tk.Label(path_frame, text="KymographDirect executable:").grid(row=3, column=0, sticky="w")
+        self.kymo_direct_entry = tk.Entry(path_frame, textvariable=self.kymo_direct_path_var)
+        self.kymo_direct_entry.grid(row=3, column=1, sticky="we", padx=(5, 5))
+        path_frame.grid_columnconfigure(1, weight=1)
+        self.kymo_direct_browse_button = tk.Button(
+            path_frame, text="Browse", command=lambda: self._browse_file(self.kymo_direct_path_var)
+        )
+        self.kymo_direct_browse_button.grid(row=3, column=2)
+        self.kymo_direct_auto_button = tk.Button(
+            path_frame, text="Auto-detect KymographDirect", command=self._auto_detect_kymograph_direct
+        )
+        self.kymo_direct_auto_button.grid(row=3, column=3, padx=(5, 0))
+
+        self._update_kymograph_method_state()
 
         # Keyword configuration ---------------------------------------------
         keyword_frame = tk.LabelFrame(main_frame, text="Keywords", padx=10, pady=10)
@@ -517,6 +546,32 @@ class FijiProcessorGUI:
                 "\nPlease specify the path manually.",
             )
 
+    def _auto_detect_kymograph_direct(self) -> None:
+        detected_path = find_kymograph_direct()
+        if detected_path:
+            self.kymo_direct_path_var.set(detected_path)
+            self._log(f"Detected KymographDirect executable: {detected_path}")
+            messagebox.showinfo(
+                "KymographDirect detected",
+                f"KymographDirect executable found at:\n{detected_path}",
+            )
+        else:
+            messagebox.showwarning(
+                "KymographDirect not found",
+                "Unable to automatically locate the KymographDirect executable."
+                "\nPlease specify the path manually.",
+            )
+
+    def _update_kymograph_method_state(self) -> None:
+        is_kymo_direct = self.kymograph_method_var.get() == "KymographDirect"
+        state = tk.NORMAL if is_kymo_direct else tk.DISABLED
+        for widget in (
+            self.kymo_direct_entry,
+            self.kymo_direct_browse_button,
+            self.kymo_direct_auto_button,
+        ):
+            widget.configure(state=state)
+
     # ------------------------------------------------------------------
     # Keyword & ROI helpers
     # ------------------------------------------------------------------
@@ -579,6 +634,16 @@ class FijiProcessorGUI:
             processor = self._get_processor()
             self._log("Validating Fiji setup...")
             validation = processor.validate_setup()
+            self._log("Fiji validation complete.")
+            if self.kymograph_method_var.get() == "KymographDirect":
+                kymo_path = self.kymo_direct_path_var.get().strip()
+                is_valid = validate_kymograph_direct_path(kymo_path)
+                if is_valid:
+                    self._log(f"KymographDirect path valid: {kymo_path}")
+                else:
+                    self._log(
+                        "KymographDirect validation failed: specify a valid executable path."
+                    )
             details = [
                 f"Fiji path: {validation['fiji_path']}",
                 f"Fiji valid: {validation['fiji_valid']}",
