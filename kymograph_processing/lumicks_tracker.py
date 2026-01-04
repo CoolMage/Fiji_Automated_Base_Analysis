@@ -5,8 +5,11 @@ from kymograph TIFF images and exports them as ImageJ ROIs for further
 analysis in Fiji or other tools.
 """
 
+from __future__ import annotations
+
+import re
 from pathlib import Path
-from typing import Iterable, List, Tuple
+from typing import Iterable, List, Sequence, Tuple
 
 import numpy as np
 from roifile import ImagejRoi
@@ -87,7 +90,32 @@ def save_tracks_as_roi(tracks: Iterable[Track], output_zip: Path | str) -> None:
     ImagejRoi.write_roi_zip(output_zip, rois)
 
 
-def process_kymographs(kymo_dir: Path | str, output_dir: Path | str) -> None:
+def _channel_allows(path: Path, channels: Sequence[int] | None) -> bool:
+    """Return True if the kymograph belongs to an allowed channel."""
+
+    if not channels:
+        return True
+
+    match = re.search(r"_ch(\d+)_", path.stem)
+    if match is None:
+        return True
+
+    try:
+        channel_idx = int(match.group(1))
+    except ValueError:
+        return True
+
+    return channel_idx in channels
+
+
+def process_kymographs(
+    kymo_dir: Path | str,
+    output_dir: Path | str,
+    *,
+    channels: Sequence[int] | None = None,
+    min_length: int = 5,
+    intensity_threshold: float = 0.0,
+) -> None:
     """Process all TIFF kymographs in a directory and export their tracks as ROI ZIPs.
 
     Parameters
@@ -96,6 +124,13 @@ def process_kymographs(kymo_dir: Path | str, output_dir: Path | str) -> None:
         Directory containing kymograph TIFF files.
     output_dir:
         Directory where ROI ZIP files will be written. Filenames match input TIFFs.
+    channels:
+        Optional subset of channels (1-based indices) to process. If omitted, all
+        detected channels are processed.
+    min_length:
+        Minimum number of points for a track to be exported.
+    intensity_threshold:
+        Minimum normalized intensity passed to the greedy tracker.
     """
 
     kymo_dir = Path(kymo_dir)
@@ -103,8 +138,13 @@ def process_kymographs(kymo_dir: Path | str, output_dir: Path | str) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     for tif_path in sorted(kymo_dir.glob("*.tif")):
+        if not _channel_allows(tif_path, channels):
+            continue
+
         try:
-            tracks = track_kymograph(tif_path)
+            tracks = track_kymograph(
+                tif_path, min_length=min_length, intensity_threshold=intensity_threshold
+            )
             output_zip = output_dir / f"{tif_path.stem}_tracks.zip"
             save_tracks_as_roi(tracks, output_zip)
         except Exception as exc:  # pragma: no cover - logging side effect only

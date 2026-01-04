@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import logging
+import re
 import subprocess
 from pathlib import Path
 from typing import Dict, Iterable, List, Mapping, MutableMapping, Sequence, Tuple
@@ -165,6 +166,7 @@ def process_kymographs_direct(
     exe_path: Path | str,
     output_dir: Path | str,
     params: object | None = None,
+    channels: Sequence[int] | None = None,
 ) -> None:
     """Process kymographs with KymographDirect and export ROIs."""
 
@@ -174,6 +176,17 @@ def process_kymographs_direct(
 
     for extension in KYMOGRAPH_FORMATS:
         for kymo_path in sorted(kymo_dir.glob(f"*{extension}")):
+            if channels:
+                match = re.search(r"_ch(\d+)_", kymo_path.stem)
+                if match:
+                    try:
+                        channel_idx = int(match.group(1))
+                    except ValueError:
+                        channel_idx = None
+
+                    if channel_idx is not None and channel_idx not in channels:
+                        continue
+
             kymo_output_dir = output_dir / kymo_path.stem
 
             try:
