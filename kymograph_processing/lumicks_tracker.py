@@ -105,8 +105,8 @@ def process_kymographs(kymo_dir: Path | str, output_dir: Path | str) -> None:
     for tif_path in sorted(kymo_dir.glob("*.tif")):
         try:
             tracks = track_kymograph(tif_path)
-            output_zip = output_dir / f\"{tif_path.stem}_tracks.zip\"
+            output_zip = output_dir / f"{tif_path.stem}_tracks.zip"
             save_tracks_as_roi(tracks, output_zip)
         except Exception as exc:  # pragma: no cover - logging side effect only
             # Print instead of logging to avoid dependency on logging setup.
-            print(f\"Failed to process {tif_path}: {exc}\")
+            print(f"Failed to process {tif_path}: {exc}")
