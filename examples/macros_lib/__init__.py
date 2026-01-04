@@ -1,6 +1,8 @@
+from pathlib import Path
 
+# Base macro library (previously in examples/macros_lib.py)
 MACROS_LIB = {
-    "Split_Channels_in_dif_dir" : '''
+    "Split_Channels_in_dif_dir": '''
 // --- Open & prepare (Bio-Formats + Z-MIP) ---
 setBatchMode(true);
 run("Bio-Formats Importer", "open=[{img_path_fiji}] autoscale color_mode=Default rois_import=[ROI manager] view=Hyperstack stack_order=XYCZT");
@@ -20,7 +22,7 @@ run("Close All");
 run("Quit");
 ''',
 
-    "mip_all_image_measure_for_channel" : '''
+    "mip_all_image_measure_for_channel": '''
 // --- Open & prepare (Bio-Formats + Z-MIP) ---
 setBatchMode(true);
 run("Bio-Formats Importer", "open=[{img_path_fiji}] autoscale color_mode=Default rois_import=[ROI manager] view=Hyperstack stack_order=XYCZT");
@@ -54,7 +56,7 @@ run("Close All");
 run("Quit");
 ''',
 
-    "all_image_measure_for_channel" : '''
+    "all_image_measure_for_channel": '''
 // --- Open & prepare (Bio-Formats + Z-MIP) ---
 setBatchMode(true);
 run("Bio-Formats Importer", "open=[{img_path_fiji}] autoscale color_mode=Default rois_import=[ROI manager] view=Hyperstack stack_order=XYCZT");
@@ -85,8 +87,7 @@ run("Close All");
 run("Quit");
 ''',
 
-
-    "mip_roi_measure_AllChannels" : '''
+    "mip_roi_measure_AllChannels": '''
 // --- Open & prepare (Bio-Formats + Z-MIP) ---
 setBatchMode(true);
 run("Bio-Formats Importer", "open=[{img_path_fiji}] autoscale color_mode=Default rois_import=[ROI manager] view=Hyperstack stack_order=XYCZT");
@@ -149,3 +150,14 @@ run("Close All");
 run("Quit");
 '''
 }
+
+
+def _load_macro_file(name: str) -> str:
+    path = Path(__file__).with_name(name)
+    return path.read_text(encoding="utf-8")
+
+
+# Register custom kymograph macro stored alongside this module
+MACROS_LIB["create_kymographs"] = _load_macro_file("fiji_kymograph_macro.ijm")
+
+__all__ = ["MACROS_LIB"]
