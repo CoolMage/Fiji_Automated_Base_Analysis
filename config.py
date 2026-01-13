@@ -114,7 +114,7 @@ class FileConfig:
     """Configuration for supported files and ROI discovery."""
 
     supported_extensions: Sequence[str] = field(
-        default_factory=lambda: [".tif", ".tiff", ".ims", ".czi", ".nd2", ".vsi"]
+        default_factory=lambda: [".tif", ".tiff", ".ims", ".czi", ".nd2", ".vsi", ".mp4"]
     )
     roi_search_templates: Sequence[str] = field(
         default_factory=lambda: ["{name}.roi", "{name}.zip", "RoiSet_{name}.zip"]

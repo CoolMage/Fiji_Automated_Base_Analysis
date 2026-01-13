@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import importlib
 import importlib.util
 import os
 import threading
@@ -18,7 +19,7 @@ from tkinter import scrolledtext
 from core_processor import CommandLibrary, CoreProcessor, ProcessingOptions
 from kymograph_processing import KymographProcessingOptions, KymographProcessor
 from examples.macros_lib import MACROS_LIB
-from utils.general.fiji_utils import find_fiji
+from utils.general.fiji_utils import find_fiji, detect_ffmpeg_plugin
 from utils.general.kymo_utils import find_kymograph_direct, validate_kymograph_direct_path
 
 
@@ -43,6 +44,16 @@ class FijiProcessorGUI:
         self.tracker_min_length_var = tk.StringVar(value="5")
         self.tracker_sensitivity_var = tk.StringVar(value="0.0")
         self.save_kymographs_var = tk.BooleanVar(value=True)
+        self.optimize_kymograph_path_var = tk.StringVar()
+        self.optimize_roi_path_var = tk.StringVar()
+        self.optimize_preset_var = tk.StringVar(value="Full")
+        self.optimize_min_len_min_var = tk.StringVar(value="2")
+        self.optimize_min_len_max_var = tk.StringVar(value="20")
+        self.optimize_threshold_min_var = tk.StringVar(value="0.0")
+        self.optimize_threshold_max_var = tk.StringVar(value="0.9")
+        self.optimize_threshold_step_var = tk.StringVar(value="0.05")
+        self.optimize_max_evals_var = tk.StringVar()
+        self.optimize_max_seconds_var = tk.StringVar()
 
         self.macro_mode_var = tk.StringVar(value="commands")
         self.macro_commands_var = tk.StringVar()
@@ -300,6 +311,92 @@ class FijiProcessorGUI:
             kymo_frame, text="Save kymographs", variable=self.save_kymographs_var
         )
         self.kymo_save_checkbox.grid(row=7, column=0, columnspan=2, sticky="w", pady=(5, 0))
+
+        tk.Label(kymo_frame, text="Optimization kymograph:").grid(
+            row=8, column=0, sticky="w", pady=(5, 0)
+        )
+        self.optimize_kymo_entry = tk.Entry(
+            kymo_frame, textvariable=self.optimize_kymograph_path_var
+        )
+        self.optimize_kymo_entry.grid(row=8, column=1, sticky="we", padx=(5, 5), pady=(5, 0))
+        self.optimize_kymo_browse_button = tk.Button(
+            kymo_frame, text="Browse", command=lambda: self._browse_file(self.optimize_kymograph_path_var)
+        )
+        self.optimize_kymo_browse_button.grid(row=8, column=2, padx=(0, 5), pady=(5, 0))
+
+        tk.Label(kymo_frame, text="Optimization ROI (zip):").grid(
+            row=9, column=0, sticky="w", pady=(5, 0)
+        )
+        self.optimize_roi_entry = tk.Entry(
+            kymo_frame, textvariable=self.optimize_roi_path_var
+        )
+        self.optimize_roi_entry.grid(row=9, column=1, sticky="we", padx=(5, 5), pady=(5, 0))
+        self.optimize_roi_browse_button = tk.Button(
+            kymo_frame, text="Browse", command=lambda: self._browse_file(self.optimize_roi_path_var)
+        )
+        self.optimize_roi_browse_button.grid(row=9, column=2, padx=(0, 5), pady=(5, 0))
+
+        tk.Label(kymo_frame, text="Optimization preset:").grid(
+            row=10, column=0, sticky="w", pady=(5, 0)
+        )
+        self.optimize_preset_menu = tk.OptionMenu(
+            kymo_frame,
+            self.optimize_preset_var,
+            "Quick",
+            "Full",
+            "Precise",
+            "Custom",
+            command=lambda *_: self._apply_optimize_preset(),
+        )
+        self.optimize_preset_menu.grid(row=10, column=1, sticky="w", padx=(5, 5), pady=(5, 0))
+
+        tk.Label(kymo_frame, text="Optimization min length (min/max):").grid(
+            row=11, column=0, sticky="w", pady=(5, 0)
+        )
+        self.optimize_min_len_frame = tk.Frame(kymo_frame)
+        self.optimize_min_len_frame.grid(row=11, column=1, sticky="w", padx=(5, 5), pady=(5, 0))
+        tk.Entry(self.optimize_min_len_frame, textvariable=self.optimize_min_len_min_var, width=6).pack(
+            side=tk.LEFT
+        )
+        tk.Label(self.optimize_min_len_frame, text="to").pack(side=tk.LEFT, padx=4)
+        tk.Entry(self.optimize_min_len_frame, textvariable=self.optimize_min_len_max_var, width=6).pack(
+            side=tk.LEFT
+        )
+
+        tk.Label(kymo_frame, text="Optimization sensitivity (min/max/step):").grid(
+            row=12, column=0, sticky="w", pady=(5, 0)
+        )
+        self.optimize_threshold_frame = tk.Frame(kymo_frame)
+        self.optimize_threshold_frame.grid(row=12, column=1, sticky="w", padx=(5, 5), pady=(5, 0))
+        tk.Entry(self.optimize_threshold_frame, textvariable=self.optimize_threshold_min_var, width=6).pack(
+            side=tk.LEFT
+        )
+        tk.Label(self.optimize_threshold_frame, text="to").pack(side=tk.LEFT, padx=4)
+        tk.Entry(self.optimize_threshold_frame, textvariable=self.optimize_threshold_max_var, width=6).pack(
+            side=tk.LEFT
+        )
+        tk.Label(self.optimize_threshold_frame, text="step").pack(side=tk.LEFT, padx=4)
+        tk.Entry(self.optimize_threshold_frame, textvariable=self.optimize_threshold_step_var, width=6).pack(
+            side=tk.LEFT
+        )
+
+        tk.Label(kymo_frame, text="Optimization limits (evals/seconds):").grid(
+            row=13, column=0, sticky="w", pady=(5, 0)
+        )
+        self.optimize_limits_frame = tk.Frame(kymo_frame)
+        self.optimize_limits_frame.grid(row=13, column=1, sticky="w", padx=(5, 5), pady=(5, 0))
+        tk.Entry(self.optimize_limits_frame, textvariable=self.optimize_max_evals_var, width=7).pack(
+            side=tk.LEFT
+        )
+        tk.Label(self.optimize_limits_frame, text=" / ").pack(side=tk.LEFT, padx=4)
+        tk.Entry(self.optimize_limits_frame, textvariable=self.optimize_max_seconds_var, width=7).pack(
+            side=tk.LEFT
+        )
+
+        self.optimize_lumicks_button = tk.Button(
+            kymo_frame, text="Optimize Lumicks", command=self._optimize_lumicks
+        )
+        self.optimize_lumicks_button.grid(row=14, column=0, columnspan=2, sticky="w", pady=(5, 0))
 
         self._update_kymograph_method_state()
 
@@ -576,11 +673,12 @@ class FijiProcessorGUI:
     # ------------------------------------------------------------------
     # Path utilities
     # ------------------------------------------------------------------
-    def _browse_directory(self) -> None:
-        initial = self.base_path_var.get() or os.getcwd()
+    def _browse_directory(self, variable: tk.StringVar | None = None) -> None:
+        target = variable or self.base_path_var
+        initial = target.get() or os.getcwd()
         directory = filedialog.askdirectory(initialdir=initial, title="Select base directory")
         if directory:
-            self.base_path_var.set(directory)
+            target.set(directory)
 
     def _browse_file(self, variable: tk.StringVar) -> None:
         initial = variable.get() or os.getcwd()
@@ -629,7 +727,7 @@ class FijiProcessorGUI:
             self.kymo_sensitivity_entry,
             self.kymo_save_checkbox,
         ):
-            widget.configure(state=common_state)
+            self._set_widget_state(widget, common_state)
 
         is_kymo_direct = self.kymograph_method_var.get() == "KymographDirect" and is_kymograph
         direct_state = tk.NORMAL if is_kymo_direct else tk.DISABLED
@@ -638,7 +736,22 @@ class FijiProcessorGUI:
             self.kymo_direct_browse_button,
             self.kymo_direct_auto_button,
         ):
-            widget.configure(state=direct_state)
+            self._set_widget_state(widget, direct_state)
+
+        is_lumicks = self.kymograph_method_var.get() == "Lumicks" and is_kymograph
+        lumicks_state = tk.NORMAL if is_lumicks else tk.DISABLED
+        for widget in (
+            self.optimize_kymo_entry,
+            self.optimize_kymo_browse_button,
+            self.optimize_roi_entry,
+            self.optimize_roi_browse_button,
+            self.optimize_preset_menu,
+            self.optimize_min_len_frame,
+            self.optimize_threshold_frame,
+            self.optimize_limits_frame,
+            self.optimize_lumicks_button,
+        ):
+            self._set_widget_state(widget, lumicks_state)
 
     # ------------------------------------------------------------------
     # Keyword & ROI helpers
@@ -677,8 +790,51 @@ class FijiProcessorGUI:
         return [part.strip() for part in value.split(",") if part.strip()]
 
     @staticmethod
+    def _set_widget_state(widget: tk.Widget, state: str) -> None:
+        try:
+            widget.configure(state=state)
+            return
+        except tk.TclError:
+            pass
+        for child in widget.winfo_children():
+            try:
+                child.configure(state=state)
+            except tk.TclError:
+                continue
+
+    @staticmethod
     def _lumicks_available() -> bool:
         return importlib.util.find_spec("lumicks.pylake") is not None
+
+    @staticmethod
+    def _ffmpeg_plugin_available(fiji_path: Optional[str]) -> bool:
+        if not fiji_path:
+            return False
+        return detect_ffmpeg_plugin(fiji_path)
+
+    @staticmethod
+    def _has_mp4_matches(
+        base_path: str,
+        keywords: Sequence[str],
+        secondary_filter: Optional[str],
+    ) -> bool:
+        if not base_path or not keywords:
+            return False
+        secondary = secondary_filter.lower() if secondary_filter else None
+        for root, _, files in os.walk(base_path):
+            for file in files:
+                file_lower = file.lower()
+                if not file_lower.endswith(".mp4"):
+                    continue
+                if not any(keyword.lower() in file_lower for keyword in keywords):
+                    continue
+                if secondary and secondary not in file_lower:
+                    continue
+                return True
+        return False
+
+    def _resolve_fiji_path(self) -> Optional[str]:
+        return self.fiji_path_var.get().strip() or find_fiji()
 
     # ------------------------------------------------------------------
     # Logging utilities
@@ -715,6 +871,24 @@ class FijiProcessorGUI:
                 else:
                     self._log(
                         "KymographDirect validation failed: specify a valid executable path."
+                    )
+            else:
+                if not self._lumicks_available():
+                    messagebox.showwarning(
+                        "lumicks.pylake missing",
+                        "lumicks.pylake is required for Lumicks-based kymograph tracking.\n"
+                        "Install it via `pip install lumicks.pylake` and try again.",
+                    )
+
+            fiji_path = validation.get("fiji_path")
+            if fiji_path:
+                ffmpeg_ok = self._ffmpeg_plugin_available(fiji_path)
+                self._log(f"FFMPEG plugin available: {ffmpeg_ok}")
+                if not ffmpeg_ok:
+                    messagebox.showwarning(
+                        "FFMPEG plugin missing",
+                        "Movie (FFMPEG) plugin not found in Fiji.\n"
+                        "Install it via Fiji updater (Help → Update...) and try again.",
                     )
             details = [
                 f"Fiji path: {validation['fiji_path']}",
@@ -875,6 +1049,16 @@ class FijiProcessorGUI:
                 return
 
             method = (kymo_options.method or "lumicks").lower()
+            secondary_filter = self.secondary_filter_var.get().strip() or None
+            fiji_path = self._resolve_fiji_path()
+            if self._has_mp4_matches(base_path, keywords, secondary_filter):
+                if not self._ffmpeg_plugin_available(fiji_path):
+                    messagebox.showerror(
+                        "FFMPEG plugin missing",
+                        "Movie (FFMPEG) plugin not found in Fiji.\n"
+                        "Install it via Fiji updater (Help → Update...) and try again.",
+                    )
+                    return
             if method == "direct":
                 # Fail fast when the supplied KymographDirect path is missing.
                 if not validate_kymograph_direct_path(kymo_options.kymograph_direct_path or ""):
@@ -989,6 +1173,174 @@ class FijiProcessorGUI:
                 self._cancel_event.set()
             self._log("Cancellation requested. Attempting to stop...")
 
+    def _apply_optimize_preset(self) -> None:
+        preset = self.optimize_preset_var.get()
+        if preset == "Quick":
+            self.optimize_min_len_min_var.set("2")
+            self.optimize_min_len_max_var.set("8")
+            self.optimize_threshold_min_var.set("0.35")
+            self.optimize_threshold_max_var.set("0.6")
+            self.optimize_threshold_step_var.set("0.05")
+            self.optimize_max_evals_var.set("80")
+            self.optimize_max_seconds_var.set("30")
+        elif preset == "Full":
+            self.optimize_min_len_min_var.set("2")
+            self.optimize_min_len_max_var.set("20")
+            self.optimize_threshold_min_var.set("0.0")
+            self.optimize_threshold_max_var.set("0.9")
+            self.optimize_threshold_step_var.set("0.05")
+            self.optimize_max_evals_var.set("")
+            self.optimize_max_seconds_var.set("")
+        elif preset == "Precise":
+            self.optimize_min_len_min_var.set("2")
+            self.optimize_min_len_max_var.set("25")
+            self.optimize_threshold_min_var.set("0.2")
+            self.optimize_threshold_max_var.set("0.8")
+            self.optimize_threshold_step_var.set("0.02")
+            self.optimize_max_evals_var.set("400")
+            self.optimize_max_seconds_var.set("120")
+        else:
+            # Custom: leave user-entered values unchanged.
+            return
+
+    def _optimize_lumicks(self) -> None:
+        if self._worker_thread and self._worker_thread.is_alive():
+            messagebox.showinfo("Processing", "Processing is already running.")
+            return
+        if not self._lumicks_available():
+            messagebox.showerror(
+                "lumicks.pylake missing",
+                "lumicks.pylake is required for Lumicks-based optimization.\n"
+                "Install it via `pip install lumicks.pylake` and try again.",
+            )
+            return
+
+        kymo_path = self.optimize_kymograph_path_var.get().strip()
+        roi_path = self.optimize_roi_path_var.get().strip()
+        if not kymo_path or not roi_path:
+            messagebox.showwarning(
+                "Missing information",
+                "Please provide both the kymograph file and the target ROI zip.",
+            )
+            return
+        if not os.path.exists(kymo_path):
+            messagebox.showerror("Missing file", f"Kymograph file not found:\n{kymo_path}")
+            return
+        if not os.path.exists(roi_path):
+            messagebox.showerror("Missing file", f"ROI file not found:\n{roi_path}")
+            return
+
+        try:
+            min_len_min = int(self.optimize_min_len_min_var.get().strip())
+            min_len_max = int(self.optimize_min_len_max_var.get().strip())
+        except ValueError as exc:
+            messagebox.showerror("Optimization range", "Min length bounds must be integers.")
+            return
+        if min_len_min < 1 or min_len_max < min_len_min:
+            messagebox.showerror(
+                "Optimization range", "Min length bounds must satisfy 1 <= min <= max."
+            )
+            return
+
+        try:
+            thresh_min = float(self.optimize_threshold_min_var.get().strip())
+            thresh_max = float(self.optimize_threshold_max_var.get().strip())
+            thresh_step = float(self.optimize_threshold_step_var.get().strip())
+        except ValueError:
+            messagebox.showerror(
+                "Optimization range", "Sensitivity bounds and step must be numbers."
+            )
+            return
+        if thresh_step <= 0 or thresh_max < thresh_min:
+            messagebox.showerror(
+                "Optimization range", "Sensitivity bounds must satisfy min <= max and step > 0."
+            )
+            return
+
+        min_length_values = list(range(min_len_min, min_len_max + 1))
+        threshold_values = []
+        value = thresh_min
+        # Include the max value when it is within floating tolerance.
+        while value <= thresh_max + (thresh_step / 10):
+            threshold_values.append(round(value, 6))
+            value += thresh_step
+
+        max_evaluations = None
+        max_seconds = None
+        if self.optimize_max_evals_var.get().strip():
+            try:
+                max_evaluations = int(self.optimize_max_evals_var.get().strip())
+            except ValueError:
+                messagebox.showerror("Optimization limits", "Max evaluations must be an integer.")
+                return
+            if max_evaluations <= 0:
+                messagebox.showerror("Optimization limits", "Max evaluations must be > 0.")
+                return
+        if self.optimize_max_seconds_var.get().strip():
+            try:
+                max_seconds = float(self.optimize_max_seconds_var.get().strip())
+            except ValueError:
+                messagebox.showerror("Optimization limits", "Max seconds must be a number.")
+                return
+            if max_seconds <= 0:
+                messagebox.showerror("Optimization limits", "Max seconds must be > 0.")
+                return
+
+        self._log("Starting Lumicks optimization...")
+        self._set_running(True)
+
+        def worker() -> None:
+            try:
+                module = importlib.import_module("kymograph_processing.lumicks_tracker")
+                result = module.optimize_lumicks_parameters(
+                    kymo_path,
+                    roi_path,
+                    min_length_values=min_length_values,
+                    intensity_threshold_values=threshold_values,
+                    max_evaluations=max_evaluations,
+                    max_seconds=max_seconds,
+                )
+                min_length = result.get("min_length")
+                threshold = result.get("intensity_threshold")
+                score = result.get("score")
+                predicted = result.get("predicted_points")
+                target = result.get("target_points")
+                evaluations = result.get("evaluations")
+                elapsed = result.get("elapsed_seconds")
+
+                def _apply() -> None:
+                    if min_length is not None:
+                        self.tracker_min_length_var.set(str(min_length))
+                    if threshold is not None:
+                        self.tracker_sensitivity_var.set(f"{threshold:.3f}".rstrip("0").rstrip("."))
+                    self._log(
+                        "Optimization complete: min_length="
+                        f"{min_length}, sensitivity={threshold}, score={score:.3f} "
+                        f"(points {predicted}/{target}, evals {evaluations}, {elapsed:.1f}s)"
+                    )
+                    messagebox.showinfo(
+                        "Optimization complete",
+                        "Best Lumicks parameters found.\n"
+                        f"Min length: {min_length}\n"
+                        f"Sensitivity: {threshold}\n"
+                        f"Score: {score:.3f}\n"
+                        f"Evaluations: {evaluations}\n"
+                        f"Elapsed: {elapsed:.1f}s",
+                    )
+
+                self.root.after(0, _apply)
+            except Exception as exc:  # pragma: no cover - GUI fallback
+                exc_message = str(exc)
+                self._log(f"Optimization failed: {exc_message}")
+                self.root.after(
+                    0, lambda message=exc_message: messagebox.showerror("Optimization error", message)
+                )
+            finally:
+                self.root.after(0, lambda: self._set_running(False))
+
+        self._worker_thread = threading.Thread(target=worker, daemon=True)
+        self._worker_thread.start()
+
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
@@ -1057,8 +1409,14 @@ class FijiProcessorGUI:
             list(self._split_entries(roi_templates_raw)) if roi_templates_raw else self._collect_listbox_values(self.roi_listbox)
         )
 
+        method_label = self.kymograph_method_var.get()
+        if method_label == "KymographDirect":
+            method = "direct"
+        else:
+            method = "lumicks"
+
         return KymographProcessingOptions(
-            method="direct" if self.kymograph_method_var.get() == "KymographDirect" else "lumicks",
+            method=method,
             channels=channels,
             tracker_min_length=min_length,
             tracker_intensity_threshold=sensitivity,

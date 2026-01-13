@@ -357,6 +357,8 @@ class MacroBuilder:
         # Normalize filename stem by replacing dots with underscores
         stem_original = image_data.document_name or ""
         stem_normalized = stem_original.replace('.', '_').replace(' ', '_') if stem_original else ""
+        source_path = image_data.source_path or image_data.input_path or ""
+        source_filename = os.path.basename(source_path) if source_path else ""
 
         context: Dict[str, Any] = {
             # Input paths
@@ -388,6 +390,9 @@ class MacroBuilder:
             # Document metadata (normalized: replace extra dots with underscores)
             "document_name": stem_normalized,
             "file_stem": stem_normalized,
+            "document_name_raw": stem_original,
+            "file_stem_raw": stem_original,
+            "document_filename_raw": source_filename,
 
             # ROI helpers
             "roi_paths": roi_paths,

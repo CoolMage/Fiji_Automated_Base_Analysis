@@ -243,7 +243,7 @@ class KymographProcessor:
                 min_length=options.tracker_min_length,
                 intensity_threshold=float(options.tracker_intensity_threshold),
             )
-        else:
+        elif method == "direct":
             process_kymographs_direct(
                 kymo_dir,
                 kymo_direct_path,

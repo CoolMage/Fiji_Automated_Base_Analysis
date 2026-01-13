@@ -4,6 +4,7 @@ import os
 import stat
 import subprocess
 import platform
+from pathlib import Path
 from typing import Optional, List
 
 from config import DEFAULT_FIJI_PATHS
@@ -119,6 +120,51 @@ def validate_fiji_path(fiji_path: str) -> bool:
         return False
 
     return True
+
+
+def _resolve_fiji_root(fiji_path: str) -> Optional[Path]:
+    """Best-effort resolver for the Fiji installation root directory."""
+    if not fiji_path:
+        return None
+
+    path = Path(fiji_path).resolve()
+    parts = [part.lower() for part in path.parts]
+    if "fiji.app" in parts:
+        idx = parts.index("fiji.app")
+        return Path(*path.parts[: idx + 1])
+
+    return path.parent
+
+
+def detect_ffmpeg_plugin(fiji_path: str) -> bool:
+    """Check whether the Movie (FFMPEG) plugin is present in the Fiji install."""
+    root = _resolve_fiji_root(fiji_path)
+    if root is None or not root.exists():
+        return False
+
+    plugin_dir = root / "plugins"
+    if not plugin_dir.exists():
+        return False
+
+    for candidate in (plugin_dir / "ffmpeg", plugin_dir / "FFMPEG"):
+        if candidate.is_dir():
+            return True
+
+    for pattern in ("ffmpeg*.jar", "*ffmpeg*.jar"):
+        if list(plugin_dir.glob(pattern)):
+            return True
+
+    jars_dir = root / "jars"
+    if jars_dir.exists():
+        for pattern in ("ffmpeg*.jar", "*ffmpeg*.jar"):
+            if list(jars_dir.glob(pattern)):
+                return True
+
+    for binary in ("ffmpeg", "ffmpeg.exe", "ffmpeg64", "ffmpeg64.exe"):
+        if (plugin_dir / "ffmpeg" / binary).exists() or (plugin_dir / binary).exists():
+            return True
+
+    return False
 
 
 def get_platform_info() -> dict:
