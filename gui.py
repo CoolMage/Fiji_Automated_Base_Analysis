@@ -54,6 +54,7 @@ class FijiProcessorGUI:
         self.optimize_threshold_step_var = tk.StringVar(value="0.05")
         self.optimize_max_evals_var = tk.StringVar()
         self.optimize_max_seconds_var = tk.StringVar()
+        self.optimize_result_var = tk.StringVar()
 
         self.macro_mode_var = tk.StringVar(value="commands")
         self.macro_commands_var = tk.StringVar()
@@ -397,6 +398,8 @@ class FijiProcessorGUI:
             kymo_frame, text="Optimize Lumicks", command=self._optimize_lumicks
         )
         self.optimize_lumicks_button.grid(row=14, column=0, columnspan=2, sticky="w", pady=(5, 0))
+        self.optimize_result_label = tk.Label(kymo_frame, textvariable=self.optimize_result_var)
+        self.optimize_result_label.grid(row=15, column=0, columnspan=3, sticky="w", pady=(4, 0))
 
         self._update_kymograph_method_state()
 
@@ -750,6 +753,7 @@ class FijiProcessorGUI:
             self.optimize_threshold_frame,
             self.optimize_limits_frame,
             self.optimize_lumicks_button,
+            self.optimize_result_label,
         ):
             self._set_widget_state(widget, lumicks_state)
 
@@ -821,7 +825,8 @@ class FijiProcessorGUI:
         if not base_path or not keywords:
             return False
         secondary = secondary_filter.lower() if secondary_filter else None
-        for root, _, files in os.walk(base_path):
+        for root, dirs, files in os.walk(base_path):
+            dirs[:] = [name for name in dirs if name != "_IGNOR_"]
             for file in files:
                 file_lower = file.lower()
                 if not file_lower.endswith(".mp4"):
@@ -1156,7 +1161,30 @@ class FijiProcessorGUI:
                                 f"  - {entry['filename']}{match_note}{secondary_note}: {entry['error']}"
                             )
                 else:
-                    self._log(f"❌ Processing failed: {result.get('error')}")
+                    failed = result.get("failed_documents") or []
+                    processed = result.get("processed_documents") or []
+                    error_message = result.get("error")
+                    if failed:
+                        self._log(
+                            f"❌ Processing completed with {len(failed)} failure(s)."
+                            f" Processed: {len(processed)}"
+                        )
+                        for entry in failed:
+                            match_note = (
+                                f" (matched keyword: {entry['matched_keyword']})"
+                                if entry.get("matched_keyword")
+                                else ""
+                            )
+                            secondary_note = (
+                                f" [secondary: {entry['secondary_key']}]"
+                                if entry.get("secondary_key")
+                                else ""
+                            )
+                            self._log(
+                                f"  - {entry['filename']}{match_note}{secondary_note}: {entry['error']}"
+                            )
+                    else:
+                        self._log(f"❌ Processing failed: {error_message}")
             except Exception as exc:  # pragma: no cover - background thread fallback
                 self._log(f"Error: {exc}")
             finally:
@@ -1287,6 +1315,7 @@ class FijiProcessorGUI:
                 return
 
         self._log("Starting Lumicks optimization...")
+        self.optimize_result_var.set("Optimizing...")
         self._set_running(True)
 
         def worker() -> None:
@@ -1299,6 +1328,7 @@ class FijiProcessorGUI:
                     intensity_threshold_values=threshold_values,
                     max_evaluations=max_evaluations,
                     max_seconds=max_seconds,
+                    stop_on_perfect=False,
                 )
                 min_length = result.get("min_length")
                 threshold = result.get("intensity_threshold")
@@ -1307,26 +1337,67 @@ class FijiProcessorGUI:
                 target = result.get("target_points")
                 evaluations = result.get("evaluations")
                 elapsed = result.get("elapsed_seconds")
+                evaluation_results = result.get("evaluation_results") or []
 
                 def _apply() -> None:
+                    formatted_threshold = None
                     if min_length is not None:
                         self.tracker_min_length_var.set(str(min_length))
                     if threshold is not None:
-                        self.tracker_sensitivity_var.set(f"{threshold:.3f}".rstrip("0").rstrip("."))
+                        formatted_threshold = f"{threshold:.3f}".rstrip("0").rstrip(".")
+                        self.tracker_sensitivity_var.set(formatted_threshold)
+                    range_summary = None
+                    if evaluation_results:
+                        try:
+                            range_summary = module.suggest_optimization_ranges(evaluation_results)
+                        except Exception:
+                            range_summary = None
+                    if range_summary:
+                        self.optimize_preset_var.set("Custom")
+                        self.optimize_min_len_min_var.set(str(range_summary["min_length_min"]))
+                        self.optimize_min_len_max_var.set(str(range_summary["min_length_max"]))
+                        threshold_min = (
+                            f"{range_summary['intensity_threshold_min']:.3f}".rstrip("0").rstrip(".")
+                        )
+                        threshold_max = (
+                            f"{range_summary['intensity_threshold_max']:.3f}".rstrip("0").rstrip(".")
+                        )
+                        self.optimize_threshold_min_var.set(threshold_min)
+                        self.optimize_threshold_max_var.set(threshold_max)
+                        step = range_summary.get("intensity_threshold_step")
+                        if step is not None:
+                            self.optimize_threshold_step_var.set(
+                                f"{step:.3f}".rstrip("0").rstrip(".")
+                            )
+                    if min_length is not None and (formatted_threshold or threshold is not None):
+                        if formatted_threshold is None:
+                            formatted_threshold = f"{threshold:.3f}".rstrip("0").rstrip(".")
+                        if range_summary:
+                            self.optimize_result_var.set(
+                                "Applied to protocol: min length "
+                                f"{min_length}, sensitivity {formatted_threshold}. "
+                                f"Range {range_summary['min_length_min']}-{range_summary['min_length_max']} / "
+                                f"{threshold_min}-{threshold_max}"
+                            )
+                        else:
+                            self.optimize_result_var.set(
+                                "Applied to protocol: min length "
+                                f"{min_length}, sensitivity {formatted_threshold}"
+                            )
                     self._log(
                         "Optimization complete: min_length="
                         f"{min_length}, sensitivity={threshold}, score={score:.3f} "
                         f"(points {predicted}/{target}, evals {evaluations}, {elapsed:.1f}s)"
                     )
-                    messagebox.showinfo(
-                        "Optimization complete",
-                        "Best Lumicks parameters found.\n"
-                        f"Min length: {min_length}\n"
-                        f"Sensitivity: {threshold}\n"
-                        f"Score: {score:.3f}\n"
-                        f"Evaluations: {evaluations}\n"
-                        f"Elapsed: {elapsed:.1f}s",
-                    )
+                    if range_summary:
+                        self._log(
+                            "Suggested ranges: min_length "
+                            f"{range_summary['min_length_min']}-{range_summary['min_length_max']}, "
+                            "sensitivity "
+                            f"{range_summary['intensity_threshold_min']:.3f}-"
+                            f"{range_summary['intensity_threshold_max']:.3f} "
+                            f"(step {range_summary['intensity_threshold_step']})"
+                        )
 
                 self.root.after(0, _apply)
             except Exception as exc:  # pragma: no cover - GUI fallback

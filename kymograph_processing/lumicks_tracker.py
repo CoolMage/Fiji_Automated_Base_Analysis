@@ -207,6 +207,7 @@ def optimize_lumicks_parameters(
     intensity_threshold_values: Sequence[float] | None = None,
     max_evaluations: int | None = None,
     max_seconds: float | None = None,
+    stop_on_perfect: bool = True,
 ) -> dict:
     """Grid search Lumicks tracker parameters against a target ROI."""
     image_path = Path(image_path)
@@ -242,6 +243,7 @@ def optimize_lumicks_parameters(
     best_threshold = None
     best_tracks: List[Track] = []
     last_error: str | None = None
+    evaluation_results: List[dict] = []
 
     perfect_score = 0.999
     start_time = time.monotonic()
@@ -264,15 +266,22 @@ def optimize_lumicks_parameters(
                 evaluations += 1
                 continue
             score = _score_tracks(tracks, target_points)
+            evaluation_results.append(
+                {
+                    "min_length": min_len,
+                    "intensity_threshold": float(threshold),
+                    "score": score,
+                }
+            )
             evaluations += 1
             if score > best_score:
                 best_score = score
                 best_min_length = min_len
                 best_threshold = float(threshold)
                 best_tracks = tracks
-                if best_score >= perfect_score:
+                if stop_on_perfect and best_score >= perfect_score:
                     break
-        if best_score >= perfect_score:
+        if stop_on_perfect and best_score >= perfect_score:
             break
         if stop_search:
             break
@@ -292,7 +301,53 @@ def optimize_lumicks_parameters(
         "predicted_points": len(_tracks_to_point_set(best_tracks)),
         "evaluations": evaluations,
         "elapsed_seconds": time.monotonic() - start_time,
+        "evaluation_results": evaluation_results,
     }
+
+
+def suggest_optimization_ranges(
+    evaluation_results: Sequence[dict],
+    *,
+    top_fraction: float = 0.1,
+    min_points: int = 12,
+) -> dict:
+    """Suggest parameter ranges based on the strongest optimization scores."""
+
+    if not evaluation_results:
+        raise ValueError("No evaluation results available for range suggestion.")
+
+    sorted_results = sorted(evaluation_results, key=lambda item: item["score"], reverse=True)
+    cutoff_count = max(min_points, int(len(sorted_results) * top_fraction))
+    cutoff_count = min(cutoff_count, len(sorted_results))
+    cutoff_score = sorted_results[cutoff_count - 1]["score"]
+
+    selected = [item for item in sorted_results if item["score"] >= cutoff_score]
+    min_lengths = sorted({item["min_length"] for item in selected})
+    thresholds = sorted({item["intensity_threshold"] for item in selected})
+
+    step = _infer_step(thresholds)
+
+    return {
+        "min_length_min": min(min_lengths),
+        "min_length_max": max(min_lengths),
+        "intensity_threshold_min": min(thresholds),
+        "intensity_threshold_max": max(thresholds),
+        "intensity_threshold_step": step,
+        "selected_count": len(selected),
+        "cutoff_score": cutoff_score,
+    }
+
+
+def _infer_step(values: Sequence[float]) -> float | None:
+    unique = sorted({round(value, 6) for value in values})
+    if len(unique) < 2:
+        return None
+    diffs = []
+    for idx in range(len(unique) - 1):
+        diff = round(unique[idx + 1] - unique[idx], 6)
+        if diff > 0:
+            diffs.append(diff)
+    return min(diffs) if diffs else None
 
 
 def _channel_allows(path: Path, channels: Sequence[int] | None) -> bool:

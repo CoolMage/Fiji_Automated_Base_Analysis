@@ -332,6 +332,7 @@ class CoreProcessor:
 
         # Search for files with the keyword
         for root, dirs, files in os.walk(base_path):
+            dirs[:] = [name for name in dirs if name != "_IGNOR_"]
             for file in files:
                 file_lower = file.lower()
                 matched_keyword = None
