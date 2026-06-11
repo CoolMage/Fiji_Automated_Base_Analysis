@@ -156,7 +156,7 @@ MACROS_LIB.add(
 MACROS_LIB.add(
     "create_rgb_mip_blue_green_red",
     '''
-    // Create an RGB max-intensity projection from a three- or four-channel image.
+    // Create a three-channel composite max-intensity projection and save its channels separately.
     //
     // Channel mapping:
     // - 3-channel input: source C1 -> blue, C2 -> green, C3 -> red
@@ -168,12 +168,22 @@ MACROS_LIB.add(
     fallbackOutputDir = "{img_dir_fiji_slash}";
     outputStem = "{file_stem}";
     outputSuffix = "_MIP_RGB";
+    blueSuffix = "_MIP_Blue";
+    greenSuffix = "_MIP_Green";
+    redSuffix = "_MIP_Red";
     projectionMethod = "Max Intensity";
     batchModeEnabled = true;
     closeAllWhenDone = true;
     quitWhenDone = true;
 
     continueProcessing = true;
+
+    // --- Create a dedicated output folder for this input file ---
+    if (outputDir == "" || outputDir == "null" || outputDir == "/") {{
+        outputDir = fallbackOutputDir;
+    }}
+    fileOutputDir = outputDir + outputStem + outputSuffix;
+    if (!File.exists(fileOutputDir)) File.makeDirectory(fileOutputDir);
 
     // --- Open image and validate channel count ---
     if (batchModeEnabled) setBatchMode(true);
@@ -222,20 +232,41 @@ MACROS_LIB.add(
         greenSource = projectedChannels[1];
         redSource = projectedChannels[2];
 
+        // Save each projected source channel as its own TIFF with the assigned LUT.
+        selectWindow(blueSource);
+        run("Blue");
+        saveAs("Tiff", fileOutputDir + "/" + outputStem + blueSuffix + ".tif");
+        blueSource = getTitle();
+
+        selectWindow(greenSource);
+        run("Green");
+        saveAs("Tiff", fileOutputDir + "/" + outputStem + greenSuffix + ".tif");
+        greenSource = getTitle();
+
+        selectWindow(redSource);
+        run("Red");
+        saveAs("Tiff", fileOutputDir + "/" + outputStem + redSuffix + ".tif");
+        redSource = getTitle();
+
+        // "create" keeps the result as a three-channel composite instead of flattening it to RGB.
         run(
             "Merge Channels...",
-            "c1=[" + redSource + "] "
+            "c1=[" + blueSource + "] "
             + "c2=[" + greenSource + "] "
-            + "c3=[" + blueSource + "]"
+            + "c3=[" + redSource + "] create"
         );
+
+        // Preserve source order C1=blue, C2=green, C3=red and display all channels together.
+        Stack.setChannel(1);
+        run("Blue");
+        Stack.setChannel(2);
+        run("Green");
+        Stack.setChannel(3);
+        run("Red");
+        Stack.setDisplayMode("composite");
         rename(outputStem + outputSuffix);
 
-        if (outputDir == "" || outputDir == "null" || outputDir == "/") {{
-            outputDir = fallbackOutputDir;
-        }}
-        if (!File.exists(outputDir)) File.makeDirectory(outputDir);
-
-        saveAs("Tiff", outputDir + outputStem + outputSuffix + ".tif");
+        saveAs("Tiff", fileOutputDir + "/" + outputStem + outputSuffix + ".tif");
     }}
 
     if (closeAllWhenDone) run("Close All");
@@ -252,9 +283,9 @@ MACROS_LIB.add(
         processed_folder="Processed_Files",
         measurement_prefix="measurements_summary",
         note=(
-            "Creates and saves an RGB max-intensity projection. Source C1 is "
-            "blue, the next retained channel is green, and the last is red; "
-            "source C2 is removed from four-channel inputs."
+            "Creates a per-file folder containing a three-channel composite "
+            "max-intensity projection and separate blue, green, and red TIFFs. "
+            "Source C2 is removed from four-channel inputs."
         ),
     ),
 )

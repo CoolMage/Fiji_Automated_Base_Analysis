@@ -83,11 +83,21 @@ def test_rgb_mip_macro_maps_channels_and_saves_tiff() -> None:
 
     assert 'run("Arrange Channels...", "new=134");' in macro_code
     assert 'run("Z Project...", "projection=[" + projectionMethod + "]");' in macro_code
-    assert '"c1=[" + redSource + "] "' in macro_code
+    assert 'fileOutputDir = outputDir + outputStem + outputSuffix;' in macro_code
+    assert '"c1=[" + blueSource + "] "' in macro_code
     assert '+ "c2=[" + greenSource + "] "' in macro_code
-    assert '+ "c3=[" + blueSource + "]"' in macro_code
-    assert "create" not in macro_code[macro_code.index('"Merge Channels..."') :]
-    assert 'saveAs("Tiff", outputDir + outputStem + outputSuffix + ".tif");' in macro_code
+    assert '+ "c3=[" + redSource + "] create"' in macro_code
+    assert 'Stack.setDisplayMode("composite");' in macro_code
+    assert 'outputStem + blueSuffix + ".tif"' in macro_code
+    assert 'outputStem + greenSuffix + ".tif"' in macro_code
+    assert 'outputStem + redSuffix + ".tif"' in macro_code
+    assert "blueSource = getTitle();" in macro_code
+    assert "greenSource = getTitle();" in macro_code
+    assert "redSource = getTitle();" in macro_code
+    assert (
+        'saveAs("Tiff", fileOutputDir + "/" + outputStem + outputSuffix + ".tif");'
+        in macro_code
+    )
     assert profile is not None
     assert profile.save_processed_images is True
     assert profile.save_measurement_csv is False
