@@ -4,6 +4,7 @@ import pytest
 
 from config import FijiConfig, FileConfig
 from examples.macros_lib import MACROS_LIB
+from gui import DEFAULT_UI_SCALE, _get_ui_scale
 from main import _build_parser, _collect_keywords, _collect_roi_templates, _resolve_macro_code
 from utils.general.macro_builder import DEFAULT_MACRO_CODE, ImageData, MacroBuilder
 
@@ -11,6 +12,19 @@ from utils.general.macro_builder import DEFAULT_MACRO_CODE, ImageData, MacroBuil
 def test_configuration_imports() -> None:
     assert FijiConfig.get_fiji_paths()
     assert ".tif" in FileConfig().supported_extensions
+
+
+def test_gui_scale_uses_environment_and_rejects_invalid_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("FIJI_GUI_SCALE", "2.0")
+    assert _get_ui_scale() == 2.0
+
+    monkeypatch.setenv("FIJI_GUI_SCALE", "invalid")
+    assert _get_ui_scale() == DEFAULT_UI_SCALE
+
+    monkeypatch.setenv("FIJI_GUI_SCALE", "10")
+    assert _get_ui_scale() == DEFAULT_UI_SCALE
 
 
 def test_complete_macro_template_expands_placeholders() -> None:

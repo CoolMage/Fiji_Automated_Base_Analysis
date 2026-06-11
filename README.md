@@ -32,6 +32,12 @@ Launch the graphical interface with:
 
 On Windows, use `run_gui.bat`.
 
+The GUI uses 150% scaling by default. Override it when launching if needed:
+
+```bash
+FIJI_GUI_SCALE=2.0 ./run_gui.sh
+```
+
 Open **Macro configuration** to choose either:
 
 - **Full macro code** for pasted Fiji code

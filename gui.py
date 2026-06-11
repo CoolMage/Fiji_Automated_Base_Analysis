@@ -11,6 +11,7 @@ import queue
 from typing import Iterable, List, Sequence, Optional, Union
 
 import tkinter as tk
+import tkinter.font as tkfont
 from tkinter import filedialog, messagebox
 from tkinter import scrolledtext
 
@@ -22,13 +23,41 @@ from utils.general.macro_builder import DEFAULT_MACRO_CODE
 from utils.general.measurement_summary_utils import detect_summary_naming_patterns
 
 
+DEFAULT_UI_SCALE = 1.5
+
+
+def _get_ui_scale() -> float:
+    """Return a validated GUI scale from the environment."""
+
+    raw_value = os.environ.get("FIJI_GUI_SCALE", str(DEFAULT_UI_SCALE))
+    try:
+        scale = float(raw_value)
+    except ValueError:
+        return DEFAULT_UI_SCALE
+    return scale if 0.75 <= scale <= 3.0 else DEFAULT_UI_SCALE
+
+
+def _scale_named_fonts(root: tk.Tk, scale: float) -> None:
+    """Scale Tk's shared fonts so every current and future widget is affected."""
+
+    for font_name in tkfont.names(root):
+        font = tkfont.nametofont(font_name, root=root)
+        size = int(font.cget("size"))
+        if size == 0:
+            continue
+        scaled_size = max(1, round(abs(size) * scale))
+        font.configure(size=scaled_size if size > 0 else -scaled_size)
+
+
 class FijiProcessorGUI:
     """Tkinter-based GUI for orchestrating Fiji document processing."""
 
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
+        self.ui_scale = _get_ui_scale()
+        _scale_named_fonts(self.root, self.ui_scale)
         self.root.title("Fiji Automated Base Analysis")
-        self.root.geometry("900x650")
+        self._set_window_geometry(self.root, 900, 650)
 
         self._processor: Optional[CoreProcessor] = None
         self._worker_thread: Optional[threading.Thread] = None
@@ -51,6 +80,16 @@ class FijiProcessorGUI:
 
         self._build_widgets()
         self.root.after(100, self._process_log_queue)
+
+    def _set_window_geometry(
+        self,
+        window: Union[tk.Tk, tk.Toplevel],
+        width: int,
+        height: int,
+    ) -> None:
+        scaled_width = round(width * self.ui_scale)
+        scaled_height = round(height * self.ui_scale)
+        window.geometry(f"{scaled_width}x{scaled_height}")
 
     # ------------------------------------------------------------------
     # Widget construction helpers
@@ -376,7 +415,7 @@ class FijiProcessorGUI:
     def _open_macro_window(self) -> None:
         window = tk.Toplevel(self.root)
         window.title("Configure Macro")
-        window.geometry("640x520")
+        self._set_window_geometry(window, 640, 520)
         window.transient(self.root)
         window.grab_set()
 
@@ -833,7 +872,7 @@ class FijiProcessorGUI:
 
         window = tk.Toplevel(self.root)
         window.title("Macro Placeholders")
-        window.geometry("520x480")
+        self._set_window_geometry(window, 520, 480)
 
         text = scrolledtext.ScrolledText(window, wrap=tk.WORD)
         text.pack(fill=tk.BOTH, expand=True)
