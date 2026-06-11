@@ -230,7 +230,8 @@ Option C: provide a full macro template string
 ```python
 custom_macro = """
 // Open .czi file - this will trigger Bio-Formats dialogs
-run("Bio-Formats Importer", "open=[{img_path_fiji}] autoscale color_mode=Default rois_import=[ROI manager] view=Hyperstack stack_order=XYCZT series_1");
+run("Bio-Formats Macro Extensions");
+Ext.openImagePlus("{img_path_fiji}");
 
 originalTitle = getTitle();
 run("Z Project...", "projection=[Max Intensity]");

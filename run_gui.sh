@@ -24,9 +24,24 @@ if [ ! -f "gui.py" ]; then
     exit 1
 fi
 
-echo "Checking and installing dependencies..."
-$PYTHON_CMD -m pip install --upgrade pip >/dev/null
-$PYTHON_CMD -m pip install -r requirements.txt
+export PYTHONPATH="$APP_DIR${PYTHONPATH:+:$PYTHONPATH}"
+
+echo "Checking dependencies..."
+MISSING_MODULES="$($PYTHON_CMD - <<'PY'
+import importlib.util
+
+required_modules = ("numpy", "skimage", "roifile")
+missing = [name for name in required_modules if importlib.util.find_spec(name) is None]
+print(" ".join(missing))
+PY
+)"
+
+if [ -n "$MISSING_MODULES" ]; then
+    echo "Error: missing Python modules: $MISSING_MODULES"
+    echo "Install them once with:"
+    echo "  $PYTHON_CMD -m pip install -r requirements.txt"
+    exit 1
+fi
 
 echo "Starting GUI..."
-exec $PYTHON_CMD gui.py "$@"
+exec "$PYTHON_CMD" -B "$APP_DIR/gui.py" "$@"

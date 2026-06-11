@@ -19,11 +19,35 @@ class FijiConfig:
 
         if system == "darwin":  # macOS
             return [
+                "/Applications/Fiji.app/Fiji.app/Contents/MacOS/fiji-macos-arm64",
+                "/Applications/Fiji.app/Fiji.app/Contents/MacOS/fiji-macos-x64",
+                "/Applications/Fiji.app/fiji",
                 "/Applications/Fiji.app/Contents/MacOS/ImageJ-macosx",
+                os.path.expanduser(
+                    "~/Applications/Fiji.app/Fiji.app/Contents/MacOS/fiji-macos-arm64"
+                ),
+                os.path.expanduser(
+                    "~/Applications/Fiji.app/Fiji.app/Contents/MacOS/fiji-macos-x64"
+                ),
+                os.path.expanduser("~/Applications/Fiji.app/fiji"),
                 os.path.expanduser(
                     "~/Applications/Fiji.app/Contents/MacOS/ImageJ-macosx"
                 ),
+                os.path.expanduser(
+                    "~/Downloads/Fiji.app/Fiji.app/Contents/MacOS/fiji-macos-arm64"
+                ),
+                os.path.expanduser(
+                    "~/Downloads/Fiji.app/Fiji.app/Contents/MacOS/fiji-macos-x64"
+                ),
+                os.path.expanduser("~/Downloads/Fiji.app/fiji"),
                 os.path.expanduser("~/Downloads/Fiji.app/Contents/MacOS/ImageJ-macosx"),
+                os.path.expanduser(
+                    "~/Desktop/Fiji.app/Fiji.app/Contents/MacOS/fiji-macos-arm64"
+                ),
+                os.path.expanduser(
+                    "~/Desktop/Fiji.app/Fiji.app/Contents/MacOS/fiji-macos-x64"
+                ),
+                os.path.expanduser("~/Desktop/Fiji.app/fiji"),
                 os.path.expanduser("~/Desktop/Fiji.app/Contents/MacOS/ImageJ-macosx"),
             ]
 

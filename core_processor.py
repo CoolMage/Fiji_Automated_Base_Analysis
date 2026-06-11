@@ -17,6 +17,11 @@ from utils.general.fiji_utils import find_fiji, validate_fiji_path
 from utils.general.file_utils import normalize_path, convert_path_for_fiji, is_bioformats_file, extract_by_mask
 from utils.general.macro_builder import MacroBuilder, ImageData, MacroCommand
 from utils.general.macros_operation import run_fiji_macro
+from utils.general.measurement_summary_utils import (
+    build_slice_and_animal_summary_rows,
+    measurement_type_to_slug,
+    split_summary_rows_by_measurement_type,
+)
 
 
 @dataclass
@@ -48,6 +53,10 @@ class ProcessingOptions:
     roi_search_templates: Optional[Sequence[str]] = None
     # Mapping of placeholder name -> X/Y mask string for filename extraction
     custom_name_patterns: Optional[Dict[str, str]] = None
+    generate_slice_averages: bool = False
+    generate_animal_averages: bool = False
+    keyword_animal_prefixes: Optional[Dict[str, str]] = None
+    cut_prefix: Optional[str] = None
 
 
 class CommandLibrary:
@@ -329,11 +338,25 @@ class CoreProcessor:
             else self.file_config.roi_search_templates
         )
         documents: List[DocumentInfo] = []
+        default_search_options = ProcessingOptions()
+        ignored_dir_names = {
+            "_IGNOR_",
+            os.path.basename(os.path.normpath(default_search_options.measurements_folder)),
+            os.path.basename(os.path.normpath(default_search_options.processed_folder)),
+        }
+        for folder_name in (
+            search_options.measurements_folder,
+            search_options.processed_folder,
+        ):
+            if folder_name:
+                ignored_dir_names.add(os.path.basename(os.path.normpath(folder_name)))
 
         # Search for files with the keyword
         for root, dirs, files in os.walk(base_path):
-            dirs[:] = [name for name in dirs if name != "_IGNOR_"]
+            dirs[:] = [name for name in dirs if name not in ignored_dir_names]
             for file in files:
+                if file.startswith(".") or file.startswith("._"):
+                    continue
                 file_lower = file.lower()
                 matched_keyword = None
                 for original_keyword, lowered_keyword in keyword_pairs:
@@ -455,6 +478,7 @@ class CoreProcessor:
             "failed_documents": [],
             "measurements": [],
             "searched_keywords": list(normalized_keywords),
+            "summary_outputs": {},
         }
 
         # Create output directories
@@ -541,11 +565,12 @@ class CoreProcessor:
             options.generate_measurement_summary
             and (generated_csv_entries or results["measurements"])
         ):
-            self._save_measurements_summary(
+            results["summary_outputs"] = self._save_measurements_summary(
                 measurements_dir,
                 results["measurements"],
                 options.measurement_summary_prefix,
                 csv_entries=generated_csv_entries,
+                options=options,
             )
 
         results["success"] = len(results["failed_documents"]) == 0
@@ -741,26 +766,72 @@ class CoreProcessor:
         measurements: List[Dict[str, Any]],
         prefix: str,
         csv_entries: Optional[Sequence[Tuple[str, DocumentInfo]]] = None,
-    ) -> None:
+        options: Optional[ProcessingOptions] = None,
+    ) -> Dict[str, str]:
         """Save measurements summary compiled from per-document exports."""
 
         summary_rows, fieldnames = self._prepare_summary_rows(measurements, csv_entries)
 
         if not summary_rows:
-            return
+            return {}
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         prefix = prefix or "measurements_summary"
+        summary_outputs: Dict[str, str] = {}
+        base_stem = f"{prefix}_{timestamp}"
+
+        def _write_rows_csv(path: str, csv_fieldnames: Sequence[str], rows: Sequence[Dict[str, Any]]) -> None:
+            with open(path, "w", newline="", encoding="utf-8") as csvfile:
+                writer = csv.DictWriter(csvfile, fieldnames=csv_fieldnames)
+                writer.writeheader()
+                for row in rows:
+                    writer.writerow(row)
+
+        def _write_aggregated_outputs(
+            rows: Sequence[Dict[str, Any]],
+            stem: str,
+            key_suffix: str = "",
+        ) -> None:
+            if not options or not (options.generate_slice_averages or options.generate_animal_averages):
+                return
+
+            aggregated = build_slice_and_animal_summary_rows(
+                rows,
+                keyword_animal_prefixes=options.keyword_animal_prefixes,
+                cut_prefix=options.cut_prefix,
+            )
+
+            if options.generate_slice_averages and aggregated["slice_rows"]:
+                slice_path = os.path.join(measurements_dir, f"{stem}_per_slice_mean.csv")
+                _write_rows_csv(slice_path, aggregated["slice_fieldnames"], aggregated["slice_rows"])
+                print(f"Per-slice averages saved to: {slice_path}")
+                summary_outputs[f"slice_summary_csv{key_suffix}"] = slice_path
+
+            if options.generate_animal_averages and aggregated["animal_rows"]:
+                animal_path = os.path.join(measurements_dir, f"{stem}_per_animal_mean.csv")
+                _write_rows_csv(animal_path, aggregated["animal_fieldnames"], aggregated["animal_rows"])
+                print(f"Per-animal averages saved to: {animal_path}")
+                summary_outputs[f"animal_summary_csv{key_suffix}"] = animal_path
 
         # Save as CSV
-        csv_path = os.path.join(measurements_dir, f"{prefix}_{timestamp}.csv")
-        with open(csv_path, "w", newline="", encoding="utf-8") as csvfile:
-            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-            writer.writeheader()
-            for row in summary_rows:
-                writer.writerow(row)
-
+        csv_path = os.path.join(measurements_dir, f"{base_stem}.csv")
+        _write_rows_csv(csv_path, fieldnames, summary_rows)
         print(f"Measurements saved to: {csv_path}")
+        summary_outputs["summary_csv"] = csv_path
+        _write_aggregated_outputs(summary_rows, base_stem)
+
+        measurement_groups = split_summary_rows_by_measurement_type(summary_rows)
+        if len(measurement_groups) > 1:
+            for measurement_type, group_rows in sorted(measurement_groups.items()):
+                slug = measurement_type_to_slug(measurement_type)
+                group_stem = f"{base_stem}_{slug}"
+                group_csv_path = os.path.join(measurements_dir, f"{group_stem}.csv")
+                _write_rows_csv(group_csv_path, fieldnames, group_rows)
+                print(f"Measurement-specific summary saved to: {group_csv_path}")
+                summary_outputs[f"summary_csv_{slug}"] = group_csv_path
+                _write_aggregated_outputs(group_rows, group_stem, key_suffix=f"_{slug}")
+
+        return summary_outputs
 
     def _prepare_summary_rows(
         self,

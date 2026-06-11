@@ -16,11 +16,13 @@ import tkinter as tk
 from tkinter import filedialog, messagebox
 from tkinter import scrolledtext
 
+from config import FileConfig
 from core_processor import CommandLibrary, CoreProcessor, ProcessingOptions
 from kymograph_processing import KymographProcessingOptions, KymographProcessor
 from examples.macros_lib import MACROS_LIB
 from utils.general.fiji_utils import find_fiji, detect_ffmpeg_plugin
 from utils.general.kymo_utils import find_kymograph_direct, validate_kymograph_direct_path
+from utils.general.measurement_summary_utils import detect_summary_naming_patterns
 
 
 class FijiProcessorGUI:
@@ -62,6 +64,14 @@ class FijiProcessorGUI:
         self.macro_code_value = ""
         self.macro_summary_var = tk.StringVar()
         self._library_code_overrides: dict[str, str] = {}
+        self._macro_profile_applied_text_values: dict[str, str] = {}
+        self._macro_profile_default_texts = {
+            "secondary_filter": "",
+            "processed_suffix": "processed",
+            "measurements_folder": "Measurements",
+            "processed_folder": "Processed_Files",
+            "measurement_prefix": "measurements_summary",
+        }
 
         self._build_widgets()
         self.root.after(100, self._process_log_queue)
@@ -204,6 +214,11 @@ class FijiProcessorGUI:
         self.save_measurements_var = tk.BooleanVar(value=False)
         self.verbose_var = tk.BooleanVar(value=False)
         self.generate_summary_var = tk.BooleanVar(value=True)
+        self.generate_slice_average_var = tk.BooleanVar(value=False)
+        self.generate_animal_average_var = tk.BooleanVar(value=False)
+        self.cut_prefix_var = tk.StringVar()
+        self.group_animal_prefix_vars: dict[str, tk.StringVar] = {}
+        self.group_prefix_rows_frame: Optional[tk.Frame] = None
 
         row = 0
         row = self._add_option_entry(
@@ -243,6 +258,50 @@ class FijiProcessorGUI:
         tk.Checkbutton(
             checkbox_frame, text="Generate measurement summary", variable=self.generate_summary_var
         ).pack(anchor="w")
+
+        # Summary aggregation ------------------------------------------------
+        summary_frame = tk.LabelFrame(main_frame, text="Summary Aggregation", padx=10, pady=10)
+        summary_frame.pack(fill=tk.BOTH, expand=False, pady=(0, 10))
+
+        tk.Label(
+            summary_frame,
+            text=(
+                "Auto-detect animal prefixes from filenames inside each keyword group and optionally"
+                " build mean tables per slice and per animal."
+            ),
+            justify=tk.LEFT,
+            wraplength=760,
+        ).grid(row=0, column=0, columnspan=3, sticky="w")
+
+        tk.Checkbutton(
+            summary_frame,
+            text="Generate per-slice mean summary",
+            variable=self.generate_slice_average_var,
+        ).grid(row=1, column=0, columnspan=3, sticky="w", pady=(8, 0))
+        tk.Checkbutton(
+            summary_frame,
+            text="Generate per-animal mean summary",
+            variable=self.generate_animal_average_var,
+        ).grid(row=2, column=0, columnspan=3, sticky="w")
+
+        tk.Label(summary_frame, text="Section prefix:").grid(row=3, column=0, sticky="w", pady=(8, 0))
+        tk.Entry(summary_frame, textvariable=self.cut_prefix_var).grid(
+            row=3, column=1, sticky="we", padx=(5, 5), pady=(8, 0)
+        )
+        tk.Button(
+            summary_frame,
+            text="Auto-detect from filenames",
+            command=lambda: self._auto_detect_summary_patterns(silent=False, overwrite=True),
+        ).grid(row=3, column=2, sticky="e", pady=(8, 0))
+
+        tk.Label(
+            summary_frame,
+            text="Animal prefixes by keyword:",
+        ).grid(row=4, column=0, columnspan=3, sticky="w", pady=(10, 0))
+
+        self.group_prefix_rows_frame = tk.Frame(summary_frame)
+        self.group_prefix_rows_frame.grid(row=5, column=0, columnspan=3, sticky="we", pady=(4, 0))
+        summary_frame.grid_columnconfigure(1, weight=1)
 
         # Kymograph processing ----------------------------------------------
         kymo_frame = tk.LabelFrame(main_frame, text="Kymograph processing", padx=10, pady=10)
@@ -434,6 +493,7 @@ class FijiProcessorGUI:
         self.log_widget.pack(fill=tk.BOTH, expand=True)
 
         self._update_macro_summary()
+        self._refresh_group_animal_prefix_rows()
 
     def _add_labeled_entry(
         self,
@@ -479,6 +539,9 @@ class FijiProcessorGUI:
         summary.grid(row=row, column=1, sticky="we", padx=(5, 0), pady=(0, 3))
         tk.Button(parent, text="Configure...", command=self._open_macro_window).grid(
             row=row, column=2, padx=(5, 0)
+        )
+        tk.Button(parent, text="Apply Defaults", command=self._apply_selected_macro_profile).grid(
+            row=row, column=3, padx=(5, 0)
         )
         parent.grid_columnconfigure(1, weight=1)
         return row + 1
@@ -633,21 +696,32 @@ class FijiProcessorGUI:
         button_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
 
         def _apply() -> None:
+            previous_mode = self.macro_mode_var.get()
+            previous_library = self.macro_library_var.get().strip()
             self.macro_mode_var.set(mode_var.get())
             self.macro_commands_var.set(commands_var.get().strip())
             self.macro_code_value = code_text.get("1.0", tk.END).strip()
+            selected_library = ""
             if library_names:
-                selected = library_var.get().strip()
-                self.macro_library_var.set(selected)
+                selected_library = library_var.get().strip()
+                self.macro_library_var.set(selected_library)
                 if library_code_text is not None:
                     library_code_value = library_code_text.get("1.0", tk.END).strip()
-                    default_code = MACROS_LIB.get(selected, "").strip()
+                    default_code = MACROS_LIB.get(selected_library, "").strip()
                     if library_code_value == default_code:
-                        self._library_code_overrides.pop(selected, None)
+                        self._library_code_overrides.pop(selected_library, None)
                     else:
-                        self._library_code_overrides[selected] = library_code_value
+                        self._library_code_overrides[selected_library] = library_code_value
             else:
                 self.macro_library_var.set("")
+            if self.macro_mode_var.get() == "library" and selected_library:
+                self._apply_macro_profile(
+                    selected_library,
+                    overwrite_text_fields=(
+                        previous_mode != "library" or previous_library != selected_library
+                    ),
+                    source_label="selected macro",
+                )
             self._update_macro_summary()
             window.destroy()
 
@@ -673,6 +747,122 @@ class FijiProcessorGUI:
                 text = f"Library macro: {summary}"
         self.macro_summary_var.set(text)
 
+    def _get_selected_library_macro_name(self) -> str:
+        if self.macro_mode_var.get() != "library":
+            return ""
+        return self.macro_library_var.get().strip()
+
+    def _apply_selected_macro_profile(self) -> None:
+        macro_name = self._get_selected_library_macro_name()
+        if not macro_name:
+            messagebox.showwarning(
+                "Library macro required",
+                "Select a bundled library macro first to apply its recommended processing settings.",
+            )
+            return
+        self._apply_macro_profile(
+            macro_name,
+            overwrite_text_fields=True,
+            source_label="Apply Defaults",
+        )
+
+    def _apply_macro_profile(
+        self,
+        macro_name: str,
+        *,
+        overwrite_text_fields: bool,
+        source_label: str,
+    ) -> bool:
+        profile = MACROS_LIB.get_profile(macro_name)
+        if profile is None:
+            self._log(f"No GUI defaults are defined for macro '{macro_name}'.")
+            return False
+
+        changes: list[str] = []
+
+        boolean_fields = (
+            ("Apply ROI templates", self.apply_roi_var, profile.apply_roi_templates),
+            ("Save processed images", self.save_processed_var, profile.save_processed_images),
+            ("Save measurement CSV", self.save_measurements_var, profile.save_measurement_csv),
+            (
+                "Generate measurement summary",
+                self.generate_summary_var,
+                profile.generate_measurement_summary,
+            ),
+        )
+        for label, variable, value in boolean_fields:
+            if value is None:
+                continue
+            if variable.get() != value:
+                variable.set(value)
+                changes.append(f"{label}={'on' if value else 'off'}")
+
+        if profile.save_measurement_csv is False or profile.generate_measurement_summary is False:
+            if self.generate_slice_average_var.get():
+                self.generate_slice_average_var.set(False)
+                changes.append("Generate per-slice mean summary=off")
+            if self.generate_animal_average_var.get():
+                self.generate_animal_average_var.set(False)
+                changes.append("Generate per-animal mean summary=off")
+
+        text_fields = (
+            (
+                "secondary_filter",
+                "Secondary filter",
+                self.secondary_filter_var,
+                profile.secondary_filter,
+            ),
+            (
+                "processed_suffix",
+                "Processed suffix",
+                self.suffix_var,
+                profile.processed_suffix,
+            ),
+            (
+                "measurements_folder",
+                "Measurements folder",
+                self.measurements_folder_var,
+                profile.measurements_folder,
+            ),
+            (
+                "processed_folder",
+                "Processed folder",
+                self.processed_folder_var,
+                profile.processed_folder,
+            ),
+            (
+                "measurement_prefix",
+                "Measurement prefix",
+                self.measurement_prefix_var,
+                profile.measurement_prefix,
+            ),
+        )
+        for key, label, variable, value in text_fields:
+            if value is None:
+                continue
+            current = variable.get().strip()
+            previous_auto = self._macro_profile_applied_text_values.get(key)
+            default_value = self._macro_profile_default_texts.get(key, "")
+            should_apply = overwrite_text_fields or current in {"", default_value} or (
+                previous_auto is not None and current == previous_auto
+            )
+            if should_apply:
+                if current != value:
+                    variable.set(value)
+                    changes.append(f"{label}='{value}'")
+                self._macro_profile_applied_text_values[key] = value
+
+        if changes:
+            self._log(
+                f"{source_label} updated processing options for '{macro_name}': "
+                + ", ".join(changes)
+            )
+        else:
+            self._log(f"{source_label} found no processing-option changes for '{macro_name}'.")
+        if profile.note:
+            self._log(f"Macro requirements: {profile.note}")
+        return True
+
     # ------------------------------------------------------------------
     # Path utilities
     # ------------------------------------------------------------------
@@ -682,6 +872,8 @@ class FijiProcessorGUI:
         directory = filedialog.askdirectory(initialdir=initial, title="Select base directory")
         if directory:
             target.set(directory)
+            if target is self.base_path_var:
+                self._auto_detect_summary_patterns(silent=True, overwrite=False)
 
     def _browse_file(self, variable: tk.StringVar) -> None:
         initial = variable.get() or os.getcwd()
@@ -768,9 +960,13 @@ class FijiProcessorGUI:
             if keyword:
                 self.keyword_listbox.insert(tk.END, keyword)
         self.keyword_var.set("")
+        self._refresh_group_animal_prefix_rows()
+        self._auto_detect_summary_patterns(silent=True, overwrite=False)
 
     def _remove_selected_keyword(self) -> None:
         self._remove_selected(self.keyword_listbox)
+        self._refresh_group_animal_prefix_rows()
+        self._auto_detect_summary_patterns(silent=True, overwrite=False)
 
     def _add_roi_template(self) -> None:
         value = self.roi_var.get().strip()
@@ -1046,6 +1242,9 @@ class FijiProcessorGUI:
         base_path = os.path.abspath(os.path.expanduser(base_path))
         is_kymograph = self.processing_mode_var.get() == "kymograph"
 
+        if self.generate_slice_average_var.get() or self.generate_animal_average_var.get():
+            self._auto_detect_summary_patterns(silent=True, overwrite=False)
+
         if is_kymograph:
             try:
                 kymo_options = self._gather_kymograph_options()
@@ -1138,6 +1337,15 @@ class FijiProcessorGUI:
                         self._log(
                             f"Measurements recorded for {len(measurements)} document(s)."
                         )
+                    summary_outputs = result.get("summary_outputs") or {}
+                    if summary_outputs:
+                        label_map = {
+                            "summary_csv": "Summary CSV",
+                            "slice_summary_csv": "Per-slice mean CSV",
+                            "animal_summary_csv": "Per-animal mean CSV",
+                        }
+                        for label, path in summary_outputs.items():
+                            self._log(f"{label_map.get(label, label)}: {path}")
                     if is_kymograph:
                         roi_outputs = result.get("roi_outputs") or []
                         self._log(f"Kymograph ROIs exported: {len(roi_outputs)}")
@@ -1418,6 +1626,112 @@ class FijiProcessorGUI:
     def _collect_listbox_values(self, listbox: tk.Listbox) -> List[str]:
         return [listbox.get(idx) for idx in range(listbox.size())]
 
+    def _refresh_group_animal_prefix_rows(self) -> None:
+        if self.group_prefix_rows_frame is None:
+            return
+
+        keywords = self._collect_listbox_values(self.keyword_listbox)
+        existing_values = {
+            keyword: variable.get().strip()
+            for keyword, variable in self.group_animal_prefix_vars.items()
+        }
+        self.group_animal_prefix_vars = {
+            keyword: tk.StringVar(value=existing_values.get(keyword, ""))
+            for keyword in keywords
+        }
+
+        for child in self.group_prefix_rows_frame.winfo_children():
+            child.destroy()
+
+        if not keywords:
+            tk.Label(
+                self.group_prefix_rows_frame,
+                text="Add keyword groups to enable auto-detected animal prefixes.",
+                fg="gray40",
+                justify=tk.LEFT,
+            ).grid(row=0, column=0, sticky="w")
+            return
+
+        self.group_prefix_rows_frame.grid_columnconfigure(1, weight=1)
+        for row, keyword in enumerate(keywords):
+            tk.Label(
+                self.group_prefix_rows_frame,
+                text=f"{keyword}:",
+            ).grid(row=row, column=0, sticky="w", pady=(0, 3))
+            tk.Entry(
+                self.group_prefix_rows_frame,
+                textvariable=self.group_animal_prefix_vars[keyword],
+            ).grid(row=row, column=1, sticky="we", padx=(5, 0), pady=(0, 3))
+
+    def _collect_group_animal_prefixes(self) -> dict[str, str]:
+        return {
+            keyword: variable.get().strip()
+            for keyword, variable in self.group_animal_prefix_vars.items()
+            if variable.get().strip()
+        }
+
+    def _auto_detect_summary_patterns(
+        self,
+        *,
+        silent: bool = True,
+        overwrite: bool = False,
+    ) -> None:
+        base_path = self.base_path_var.get().strip()
+        keywords = self._collect_listbox_values(self.keyword_listbox)
+        if not base_path or not keywords:
+            return
+
+        self._refresh_group_animal_prefix_rows()
+
+        try:
+            detected = detect_summary_naming_patterns(
+                os.path.abspath(os.path.expanduser(base_path)),
+                keywords,
+                secondary_filter=self.secondary_filter_var.get().strip() or None,
+                supported_extensions=FileConfig().supported_extensions,
+            )
+        except Exception as exc:
+            if not silent:
+                messagebox.showerror("Auto-detect summary patterns", str(exc))
+            return
+
+        updated_keywords: List[str] = []
+        detected_prefixes = detected.get("keyword_animal_prefixes", {}) or {}
+        for keyword in keywords:
+            variable = self.group_animal_prefix_vars.get(keyword)
+            if variable is None:
+                continue
+
+            detected_prefix = (detected_prefixes.get(keyword) or "").strip()
+            if not detected_prefix:
+                continue
+            if overwrite or not variable.get().strip():
+                variable.set(detected_prefix)
+                updated_keywords.append(f"{keyword} -> {detected_prefix}")
+
+        detected_cut_prefix = (detected.get("cut_prefix") or "").strip()
+        cut_updated = False
+        if detected_cut_prefix and (overwrite or not self.cut_prefix_var.get().strip()):
+            self.cut_prefix_var.set(detected_cut_prefix)
+            cut_updated = True
+
+        if not silent:
+            if updated_keywords or cut_updated:
+                message_lines = []
+                if cut_updated:
+                    message_lines.append(f"Section prefix: {self.cut_prefix_var.get().strip()}")
+                if updated_keywords:
+                    message_lines.extend(updated_keywords)
+                messagebox.showinfo(
+                    "Summary patterns detected",
+                    "\n".join(message_lines),
+                )
+            else:
+                messagebox.showwarning(
+                    "Summary patterns",
+                    "No animal or section markers were detected in the matching filenames.",
+                )
+
     def _collect_extractors(self) -> dict:
         """Collect custom extractor entries from listbox into a dict name->mask."""
         mapping = {}
@@ -1433,6 +1747,19 @@ class FijiProcessorGUI:
 
     def _gather_processing_options(self) -> ProcessingOptions:
         roi_templates = self._collect_listbox_values(self.roi_listbox) or None
+        generate_slice_averages = self.generate_slice_average_var.get()
+        generate_animal_averages = self.generate_animal_average_var.get()
+
+        if (generate_slice_averages or generate_animal_averages) and not self.save_measurements_var.get():
+            self.save_measurements_var.set(True)
+            self._log(
+                "Enabled 'Save measurement CSV' automatically because aggregated summaries need per-document CSV files."
+            )
+        if (generate_slice_averages or generate_animal_averages) and not self.generate_summary_var.get():
+            self.generate_summary_var.set(True)
+            self._log(
+                "Enabled 'Generate measurement summary' automatically because aggregated summaries depend on it."
+            )
 
         options = ProcessingOptions(
             apply_roi=self.apply_roi_var.get(),
@@ -1445,6 +1772,10 @@ class FijiProcessorGUI:
             or "measurements_summary",
             generate_measurement_summary=self.generate_summary_var.get(),
             roi_search_templates=roi_templates,
+            generate_slice_averages=generate_slice_averages,
+            generate_animal_averages=generate_animal_averages,
+            keyword_animal_prefixes=self._collect_group_animal_prefixes() or None,
+            cut_prefix=self.cut_prefix_var.get().strip() or None,
         )
 
         secondary = self.secondary_filter_var.get().strip()

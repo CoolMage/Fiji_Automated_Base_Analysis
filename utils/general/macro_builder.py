@@ -50,7 +50,7 @@ class MacroBuilder:
             'BatchMode':   'setBatchMode(true);',
 
             # File operations
-            'open_bioformats': 'run("Bio-Formats Importer", "open=[{input_path}] autoscale color_mode=Default rois_import=[ROI manager] view=Hyperstack stack_order=XYCZT series_1");',
+            'open_bioformats': 'run("Bio-Formats Macro Extensions");\nExt.openImagePlus("{input_path}");',
             'open_standard': 'open("{input_path}");',
             'save_tiff': 'saveAs("Tiff", "{output_path}");',
             'save_csv': 'saveAs("Measurements", "{measurements_path}");',

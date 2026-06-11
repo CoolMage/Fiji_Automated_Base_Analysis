@@ -62,7 +62,7 @@ def main() -> None:
     #     "save_csv",
     # ]
 
-    macro_commands = MACROS_LIB["all_image_and_rois_measure_for_channel"]
+    macro_commands = MACROS_LIB["measure_matching_roi_per_channel_after_mip"]
 
     result = processor.process_documents(
         base_path=str(base_path),

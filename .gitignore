@@ -2,3 +2,8 @@
 /COMPREHENSIVE_TEST_REPORT.md
 /FINAL_TEST_REPORT.md
 /TEST_REPORT.md
+
+.DS_Store
+__pycache__/
+*.py[cod]
+.pytest_cache/

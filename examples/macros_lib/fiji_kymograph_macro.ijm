@@ -1,62 +1,66 @@
-// Create per-channel kymographs for each ROI
-setBatchMode(true);
-
-// 1) Open image (special-case MP4 via FFMPEG)
+// Create a per-channel kymograph TIFF for every ROI loaded for the current image.
+//
+// --- Editable parameters ---
 inputPath = "{input_path}";
-if (endsWith(inputPath, ".mp4")) {{
+outputDir = "{output_dir_fiji}";
+outputStem = "{file_stem}";
+resliceOptions = "output=1.000 start=Top avoid";
+loadMovieWithFfmpeg = true;
+batchModeEnabled = true;
+closeAllWhenDone = true;
+quitWhenDone = true;
+
+// --- Open image ---
+if (batchModeEnabled) setBatchMode(true);
+if (loadMovieWithFfmpeg && endsWith(inputPath, ".mp4")) {{
     run("Movie (FFMPEG)...", "choose=" + inputPath + " use_virtual_stack first_frame=0 last_frame=-1");
 }} else {{
-    run("Bio-Formats Importer", "open=[" + inputPath + "] autoscale color_mode=Default rois_import=[ROI manager] view=Hyperstack stack_order=XYCZT");
+    run("Bio-Formats Macro Extensions");
+    Ext.openImagePlus(inputPath);
 }}
 
-// 2) Split channels only if there is more than one channel
+// --- Split channels only when needed ---
 getDimensions(width, height, channels, slices, frames);
 if (channels > 1) {{
     run("Split Channels");
-    img_list = getList("image.titles");
+    imgList = getList("image.titles");
 }} else {{
-    img_list = newArray(getTitle());
+    imgList = newArray(getTitle());
 }}
 
-// 3) Load ROIs provided by the processor
+// --- Load ROIs provided by the processor ---
 roiManager("Reset");
 {roi_manager_open_block}
+roiCount = roiManager("count");
+if (roiCount == 0) {{
+    print("WARN: No ROIs loaded; no kymographs will be created.");
+}}
 
-// Ensure output directory exists
-if (!File.exists("{output_dir_fiji}")) File.makeDirectory("{output_dir_fiji}");
+// --- Ensure output directory exists ---
+if (!File.exists(outputDir)) File.makeDirectory(outputDir);
 
-// 4) Reslice per channel and ROI, saving kymographs
-for (i = 0; i < img_list.length; i++) {{
-    selectWindow(img_list[i]);
-    chTitle = getTitle();
+// --- Reslice every ROI for every channel ---
+for (i = 0; i < imgList.length; i++) {{
+    selectWindow(imgList[i]);
+    channelTitle = getTitle();
 
-    roiCount = roiManager("count");
     for (r = 0; r < roiCount; r++) {{
         roiManager("Select", r);
         roiName = call("ij.plugin.frame.RoiManager.getName", r);
-        if (roiName=="" || roiName=="null") roiName = "ROI_" + (r+1);
+        if (roiName == "" || roiName == "null") roiName = "ROI_" + (r + 1);
 
-        // Sanitize ROI name for file paths
         roiSafe = replace(roiName, " ", "_");
         roiSafe = replace(roiSafe, "/", "_");
         roiSafe = replace(roiSafe, "\\", "_");
 
-        // Generate kymograph via reslice
-        run("Reslice [/]...", "output=1.000 start=Top avoid");
-        resTitle = getTitle();
-
-        savePath = "{output_dir_fiji}/" + "{file_stem}" + "_ch" + (i+1) + "_" + roiSafe + "_kymo.tif";
-        saveAs("Tiff", savePath);
-
-        // Close the reslice window before the next ROI
+        run("Reslice [/]...", resliceOptions);
+        saveAs("Tiff", outputDir + "/" + outputStem + "_ch" + (i + 1) + "_" + roiSafe + "_kymo.tif");
         run("Close");
     }}
 
-    // Close channel slice window after processing its ROIs
-    selectWindow(chTitle);
+    selectWindow(channelTitle);
     run("Close");
 }}
 
-// 5) Clean up
-run("Close All");
-run("Quit");
+if (closeAllWhenDone) run("Close All");
+if (quitWhenDone) run("Quit");

@@ -201,7 +201,8 @@ def test_custom_macro_template():
         )
 
         template = (
-            'run("Bio-Formats Importer", "open=[{img_path_fiji}] view=Hyperstack");\n'
+            'run("Bio-Formats Macro Extensions");\n'
+            'Ext.openImagePlus("{img_path_fiji}");\n'
             "{roi_manager_open_block}\n"
             'saveAs("Results", "{out_csv}");'
         )
