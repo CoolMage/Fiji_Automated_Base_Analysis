@@ -134,7 +134,7 @@ class FijiProcessorGUI:
         )
         self._add_labeled_entry(
             path_frame,
-            "Fiji executable:",
+            "Fiji / ImageJ executable:",
             self.fiji_path_var,
             1,
             browse_command=lambda: self._browse_file(self.fiji_path_var),
@@ -711,12 +711,15 @@ class FijiProcessorGUI:
         detected_path = find_fiji()
         if detected_path:
             self.fiji_path_var.set(detected_path)
-            self._log(f"Detected Fiji executable: {detected_path}")
-            messagebox.showinfo("Fiji detected", f"Fiji executable found at:\n{detected_path}")
+            self._log(f"Detected Fiji / ImageJ executable: {detected_path}")
+            messagebox.showinfo(
+                "Fiji / ImageJ detected",
+                f"Executable found at:\n{detected_path}",
+            )
         else:
             messagebox.showwarning(
-                "Fiji not found",
-                "Unable to automatically locate the Fiji executable."
+                "Fiji / ImageJ not found",
+                "Unable to automatically locate a Fiji or ImageJ executable."
                 "\nPlease specify the path manually.",
             )
 
@@ -790,9 +793,9 @@ class FijiProcessorGUI:
     def _validate_setup(self) -> None:
         try:
             processor = self._get_processor()
-            self._log("Validating Fiji setup...")
+            self._log("Validating Fiji / ImageJ setup...")
             validation = processor.validate_setup()
-            self._log("Fiji validation complete.")
+            self._log("Fiji / ImageJ validation complete.")
 
             fiji_path = validation.get("fiji_path")
             if fiji_path:
@@ -801,12 +804,12 @@ class FijiProcessorGUI:
                 if not ffmpeg_ok:
                     messagebox.showwarning(
                         "FFMPEG plugin missing",
-                        "Movie (FFMPEG) plugin not found in Fiji.\n"
-                        "Install it via Fiji updater (Help → Update...) and try again.",
+                        "Movie (FFMPEG) plugin was not found.\n"
+                        "Install a compatible plugin if MP4 processing is required.",
                     )
             details = [
-                f"Fiji path: {validation['fiji_path']}",
-                f"Fiji valid: {validation['fiji_valid']}",
+                f"Fiji / ImageJ path: {validation['fiji_path']}",
+                f"Executable valid: {validation['fiji_valid']}",
                 f"Supported extensions: {', '.join(validation['supported_extensions'])}",
             ]
             self._log("\n".join(details))

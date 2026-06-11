@@ -1,9 +1,10 @@
-"""Cross-platform Fiji utilities for finding and running Fiji."""
+"""Cross-platform utilities for finding Fiji or ImageJ installations."""
 
 import os
 import stat
 import subprocess
 import platform
+import shutil
 from pathlib import Path
 from typing import Optional, List
 
@@ -19,6 +20,112 @@ def _macos_fiji_fallback_names() -> List[str]:
         "fiji",
         "ImageJ-macosx",
     ]
+
+
+def _platform_launcher_names(system: str) -> List[str]:
+    """Return Fiji launchers first, followed by common ImageJ launchers."""
+
+    if system == "darwin":
+        return _macos_fiji_fallback_names() + [
+            "ImageJ",
+            "JavaApplicationStub",
+        ]
+    if system == "windows":
+        return [
+            "fiji.exe",
+            "ImageJ-win64.exe",
+            "ImageJ-win32.exe",
+            "ImageJ.exe",
+            "imagej.exe",
+        ]
+    return [
+        "fiji",
+        "ImageJ-linux64",
+        "ImageJ-linux32",
+        "imagej",
+        "ImageJ",
+        "imagej1",
+    ]
+
+
+def _candidate_priority(path: str, original_index: int) -> tuple[int, int]:
+    """Rank Fiji installations before generic Fiji launchers and ImageJ."""
+
+    candidate = Path(path).expanduser()
+    try:
+        comparison_path = str(candidate.resolve()).lower()
+    except OSError:
+        comparison_path = str(candidate).lower()
+
+    if "fiji" in comparison_path:
+        return (0, original_index)
+
+    fiji_launcher_names = {
+        "fiji",
+        "fiji.exe",
+        "fiji-macos-arm64",
+        "fiji-macos-x64",
+        "imagej-linux64",
+        "imagej-linux32",
+        "imagej-win64.exe",
+        "imagej-win32.exe",
+    }
+    if candidate.name.lower() in fiji_launcher_names:
+        return (1, original_index)
+    return (2, original_index)
+
+
+def _select_existing_executable(paths: List[str]) -> Optional[str]:
+    """Choose an executable candidate while preserving Fiji preference."""
+
+    candidates: list[tuple[tuple[int, int], str]] = []
+    seen: set[str] = set()
+    for index, raw_path in enumerate(paths):
+        if not raw_path:
+            continue
+        path = str(Path(raw_path).expanduser())
+        try:
+            normalized_key = str(Path(path).resolve())
+        except OSError:
+            normalized_key = path
+        if normalized_key in seen:
+            continue
+        seen.add(normalized_key)
+
+        if os.path.isfile(path) and os.access(path, os.X_OK):
+            candidates.append((_candidate_priority(path, index), path))
+
+    if not candidates:
+        return None
+
+    selected = min(candidates, key=lambda item: item[0])[1]
+    return normalize_fiji_path(selected)
+
+
+def _find_named_executables(roots: List[str], names: List[str]) -> List[str]:
+    """Find matching executable files under Unix roots in one bounded search."""
+
+    existing_roots = [root for root in roots if os.path.isdir(root)]
+    if not existing_roots:
+        return []
+
+    name_expression: list[str] = ["("]
+    for index, name in enumerate(names):
+        if index:
+            name_expression.append("-o")
+        name_expression.extend(["-name", name])
+    name_expression.append(")")
+
+    try:
+        result = subprocess.check_output(
+            ["find", *existing_roots, "-type", "f", *name_expression],
+            text=True,
+            timeout=30,
+            stderr=subprocess.DEVNULL,
+        )
+    except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError):
+        return []
+    return [line.strip() for line in result.splitlines() if line.strip()]
 
 
 def _macos_launcher_arch(path: Path) -> Optional[str]:
@@ -108,92 +215,74 @@ def normalize_fiji_path(fiji_path: str) -> str:
 
 def find_fiji(custom_paths: Optional[List[str]] = None) -> Optional[str]:
     """
-    Find Fiji executable across different platforms.
+    Find Fiji or ImageJ across different platforms, preferring Fiji.
     
     Args:
         custom_paths: Optional list of custom paths to search
         
     Returns:
-        Path to Fiji executable if found, None otherwise
+        Path to a Fiji or ImageJ executable if found, otherwise None
     """
-    search_paths = custom_paths or DEFAULT_FIJI_PATHS
-    
-    # Check known locations
-    for path in search_paths:
-        if os.path.isfile(path) and os.access(path, os.X_OK):
-            return normalize_fiji_path(path)
-    
-    # Platform-specific fallback searches
+    search_paths = custom_paths if custom_paths is not None else DEFAULT_FIJI_PATHS
+    selected = _select_existing_executable(search_paths)
+    if selected:
+        return selected
+
     system = platform.system().lower()
-    
-    if system == "darwin":  # macOS
-        for executable_name in _macos_fiji_fallback_names():
-            try:
-                result = subprocess.check_output(
-                    ["find", "/Applications", "-name", executable_name, "-type", "f"],
-                    text=True,
-                    timeout=30,
-                ).strip()
-                if result:
-                    return normalize_fiji_path(result.split("\n")[0])
-            except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError):
-                continue
-    
+    launcher_names = _platform_launcher_names(system)
+
+    path_candidates = [
+        path
+        for name in launcher_names
+        if (path := shutil.which(name)) is not None
+    ]
+
+    filesystem_candidates: List[str] = []
+    if system == "darwin":
+        filesystem_candidates = _find_named_executables(
+            ["/Applications", os.path.expanduser("~/Applications")],
+            launcher_names,
+        )
     elif system == "windows":
-        # Search in common Windows locations
         common_paths = [
             r"C:\Program Files",
             r"C:\Program Files (x86)",
-            os.path.expanduser("~")
         ]
-        
         for base_path in common_paths:
-            try:
-                result = subprocess.check_output(
-                    ["where", "/R", base_path, "ImageJ-win64.exe"],
-                    text=True,
-                    timeout=30
-                ).strip()
-                if result:
-                    return result.split("\n")[0]
-            except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError):
-                continue
-    
-    else:  # Linux
-        try:
-            result = subprocess.check_output(
-                ["which", "ImageJ-linux64"],
-                text=True,
-                timeout=10
-            ).strip()
-            if result:
-                return result
-        except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError):
-            pass
-        
-        # Search in common Linux locations
-        try:
-            result = subprocess.check_output(
-                ["find", "/opt", "/usr/local", os.path.expanduser("~"), "-name", "ImageJ-linux64", "-type", "f"],
-                text=True,
-                timeout=30
-            ).strip()
-            if result:
-                return result.split("\n")[0]
-        except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError):
-            pass
-    
-    return None
+            for executable_name in ("fiji*.exe", "ImageJ*.exe"):
+                try:
+                    result = subprocess.check_output(
+                        ["where", "/R", base_path, executable_name],
+                        text=True,
+                        timeout=30,
+                        stderr=subprocess.DEVNULL,
+                    )
+                except (
+                    subprocess.TimeoutExpired,
+                    subprocess.CalledProcessError,
+                    FileNotFoundError,
+                ):
+                    continue
+                filesystem_candidates.extend(
+                    line.strip() for line in result.splitlines() if line.strip()
+                )
+    else:
+        filesystem_candidates = _find_named_executables(
+            ["/opt", "/usr/local", os.path.expanduser("~")],
+            launcher_names,
+        )
+
+    return _select_existing_executable(path_candidates + filesystem_candidates)
 
 
 def validate_fiji_path(fiji_path: str) -> bool:
-    """Validate that the given path points to a usable Fiji executable.
+    """Validate that the given path points to a usable Fiji or ImageJ executable.
 
     Validation is intentionally lightweight to avoid spawning a Fiji GUI
     process.  We rely on filesystem checks rather than executing the binary.
 
     Args:
-        fiji_path: Path to Fiji executable
+        fiji_path: Path to a Fiji or ImageJ executable
 
     Returns:
         True if the path looks like a valid executable, False otherwise

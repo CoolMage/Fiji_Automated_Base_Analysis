@@ -6,12 +6,25 @@ from config import FijiConfig, FileConfig
 from examples.macros_lib import MACROS_LIB
 from gui import DEFAULT_UI_SCALE, _get_ui_scale
 from main import _build_parser, _collect_keywords, _collect_roi_templates, _resolve_macro_code
+from utils.general.fiji_utils import find_fiji
 from utils.general.macro_builder import DEFAULT_MACRO_CODE, ImageData, MacroBuilder
 
 
 def test_configuration_imports() -> None:
     assert FijiConfig.get_fiji_paths()
     assert ".tif" in FileConfig().supported_extensions
+
+
+def test_linux_search_paths_include_fiji_and_imagej(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("config.platform.system", lambda: "Linux")
+
+    paths = FijiConfig.get_fiji_paths()
+
+    assert "/opt/fiji/ImageJ-linux64" in paths
+    assert "/usr/bin/imagej" in paths
+    assert paths.index("/opt/fiji/ImageJ-linux64") < paths.index("/usr/bin/imagej")
 
 
 def test_gui_scale_uses_environment_and_rejects_invalid_values(
@@ -25,6 +38,32 @@ def test_gui_scale_uses_environment_and_rejects_invalid_values(
 
     monkeypatch.setenv("FIJI_GUI_SCALE", "10")
     assert _get_ui_scale() == DEFAULT_UI_SCALE
+
+
+def test_executable_discovery_prefers_fiji_over_imagej(tmp_path) -> None:
+    imagej_path = tmp_path / "ImageJ" / "imagej"
+    fiji_path = tmp_path / "Fiji.app" / "ImageJ-linux64"
+    imagej_path.parent.mkdir()
+    fiji_path.parent.mkdir()
+    imagej_path.write_text("#!/bin/sh\n", encoding="utf-8")
+    fiji_path.write_text("#!/bin/sh\n", encoding="utf-8")
+    imagej_path.chmod(0o755)
+    fiji_path.chmod(0o755)
+
+    detected = find_fiji([str(imagej_path), str(fiji_path)])
+
+    assert detected == str(fiji_path.resolve())
+
+
+def test_executable_discovery_falls_back_to_imagej(tmp_path) -> None:
+    imagej_path = tmp_path / "ImageJ" / "imagej"
+    imagej_path.parent.mkdir()
+    imagej_path.write_text("#!/bin/sh\n", encoding="utf-8")
+    imagej_path.chmod(0o755)
+
+    detected = find_fiji([str(imagej_path)])
+
+    assert detected == str(imagej_path.resolve())
 
 
 def test_complete_macro_template_expands_placeholders() -> None:

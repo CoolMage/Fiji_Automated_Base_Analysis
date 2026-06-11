@@ -22,7 +22,7 @@ def test_invalid_fiji_path_is_rejected() -> None:
     try:
         CoreProcessor(fiji_path="/invalid/path/to/fiji")
     except RuntimeError as exc:
-        assert "Invalid Fiji path" in str(exc)
+        assert "Invalid Fiji / ImageJ path" in str(exc)
     else:
         raise AssertionError("CoreProcessor accepted an invalid Fiji path")
 

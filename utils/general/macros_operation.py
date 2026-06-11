@@ -128,7 +128,7 @@ def run_fiji_macro(fiji_path: str, macro_code: str,
     if not validate_fiji_path(fiji_path):
         return {
             "success": False,
-            "error": f"Invalid Fiji path: {fiji_path}",
+            "error": f"Invalid Fiji / ImageJ path: {fiji_path}",
             "stdout": "",
             "stderr": ""
         }
@@ -143,8 +143,12 @@ def run_fiji_macro(fiji_path: str, macro_code: str,
         runtime_args: list[str] = []
         launcher_name = Path(fiji_path).name.lower()
         supports_jaunch_args = launcher_name == "fiji" or launcher_name.startswith("fiji-") or launcher_name.startswith("jaunch-")
-        if additional_args is None and system == "darwin":
-            additional_args = ["--default-gc"]
+        if additional_args is None:
+            additional_args = (
+                ["--default-gc"]
+                if system == "darwin" and supports_jaunch_args
+                else []
+            )
         if supports_jaunch_args and not additional_args:
             additional_args = []
         use_classic_ij1 = system == "darwin" and _macro_requires_classic_ij1(macro_code)

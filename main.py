@@ -119,7 +119,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     parser.add_argument(
         "--fiji-path",
-        help="Path to the Fiji executable (auto-detected if omitted).",
+        help="Path to Fiji or ImageJ (Fiji is preferred during auto-detection).",
     )
     parser.add_argument(
         "--apply-roi",
@@ -173,7 +173,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--validate",
         action="store_true",
-        help="Validate the Fiji setup and exit.",
+        help="Validate the Fiji / ImageJ setup and exit.",
     )
     parser.add_argument(
         "--list-macros",
@@ -199,8 +199,8 @@ def main() -> int:
 
         if args.validate:
             validation = processor.validate_setup()
-            print(f"Fiji path: {validation['fiji_path']}")
-            print(f"Fiji valid: {validation['fiji_valid']}")
+            print(f"Fiji / ImageJ path: {validation['fiji_path']}")
+            print(f"Executable valid: {validation['fiji_valid']}")
             print(
                 "Supported extensions: "
                 + ", ".join(validation["supported_extensions"])

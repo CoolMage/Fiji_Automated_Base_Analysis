@@ -14,7 +14,8 @@ The former simplified command-sequence syntax is not supported.
 ## Requirements
 
 - Python 3.8 or later
-- A local Fiji/ImageJ installation
+- A local Fiji or ImageJ installation. Fiji is preferred during auto-detection
+  because it includes plugins used by the bundled macros.
 
 Install the Python dependencies:
 

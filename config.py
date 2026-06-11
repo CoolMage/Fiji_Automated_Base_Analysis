@@ -5,12 +5,13 @@ import platform
 from dataclasses import dataclass, field
 from typing import List, Sequence
 
+
 class FijiConfig:
-    """Cross-platform Fiji installation hints used during auto-discovery."""
+    """Cross-platform Fiji and ImageJ installation hints used during discovery."""
 
     @staticmethod
     def get_fiji_paths() -> List[str]:
-        """Return platform-specific search paths for a Fiji executable."""
+        """Return platform-specific paths, with Fiji candidates listed first."""
 
         system = platform.system().lower()
 
@@ -46,15 +47,39 @@ class FijiConfig:
                 ),
                 os.path.expanduser("~/Desktop/Fiji.app/fiji"),
                 os.path.expanduser("~/Desktop/Fiji.app/Contents/MacOS/ImageJ-macosx"),
+                "/Applications/ImageJ.app/Contents/MacOS/ImageJ",
+                "/Applications/ImageJ.app/Contents/MacOS/ImageJ-macosx",
+                "/Applications/ImageJ.app/Contents/MacOS/JavaApplicationStub",
+                os.path.expanduser("~/Applications/ImageJ.app/Contents/MacOS/ImageJ"),
+                os.path.expanduser(
+                    "~/Applications/ImageJ.app/Contents/MacOS/ImageJ-macosx"
+                ),
+                os.path.expanduser(
+                    "~/Applications/ImageJ.app/Contents/MacOS/JavaApplicationStub"
+                ),
+                os.path.expanduser("~/Downloads/ImageJ.app/Contents/MacOS/ImageJ"),
+                os.path.expanduser(
+                    "~/Downloads/ImageJ.app/Contents/MacOS/ImageJ-macosx"
+                ),
+                os.path.expanduser(
+                    "~/Downloads/ImageJ.app/Contents/MacOS/JavaApplicationStub"
+                ),
             ]
 
         if system == "windows":
             return [
-                r"C:\\Program Files\\Fiji\\ImageJ-win64.exe",
-                r"C:\\Program Files (x86)\\Fiji\\ImageJ-win64.exe",
-                os.path.expanduser(r"~\\Fiji\\ImageJ-win64.exe"),
-                os.path.expanduser(r"~\\Desktop\\Fiji\\ImageJ-win64.exe"),
-                os.path.expanduser(r"~\\Downloads\\Fiji\\ImageJ-win64.exe"),
+                r"C:\Program Files\Fiji\ImageJ-win64.exe",
+                r"C:\Program Files (x86)\Fiji\ImageJ-win64.exe",
+                os.path.expanduser(r"~\Fiji\ImageJ-win64.exe"),
+                os.path.expanduser(r"~\Desktop\Fiji\ImageJ-win64.exe"),
+                os.path.expanduser(r"~\Downloads\Fiji\ImageJ-win64.exe"),
+                r"C:\Program Files\ImageJ\ImageJ.exe",
+                r"C:\Program Files\ImageJ\ImageJ-win64.exe",
+                r"C:\Program Files (x86)\ImageJ\ImageJ.exe",
+                os.path.expanduser(r"~\ImageJ\ImageJ.exe"),
+                os.path.expanduser(r"~\ImageJ\ImageJ-win64.exe"),
+                os.path.expanduser(r"~\Desktop\ImageJ\ImageJ.exe"),
+                os.path.expanduser(r"~\Downloads\ImageJ\ImageJ.exe"),
             ]
 
         # Linux / other Unix-like
@@ -64,6 +89,17 @@ class FijiConfig:
             os.path.expanduser("~/fiji/ImageJ-linux64"),
             os.path.expanduser("~/Fiji.app/ImageJ-linux64"),
             os.path.expanduser("~/Desktop/fiji/ImageJ-linux64"),
+            "/usr/bin/imagej",
+            "/usr/local/bin/imagej",
+            "/opt/ImageJ/ImageJ-linux64",
+            "/opt/ImageJ/ImageJ",
+            "/usr/local/ImageJ/ImageJ-linux64",
+            os.path.expanduser("~/ImageJ/ImageJ-linux64"),
+            os.path.expanduser("~/ImageJ/ImageJ"),
+            os.path.expanduser("~/Desktop/ImageJ/ImageJ-linux64"),
+            os.path.expanduser("~/Desktop/ImageJ/ImageJ"),
+            os.path.expanduser("~/Downloads/ImageJ/ImageJ-linux64"),
+            os.path.expanduser("~/Downloads/ImageJ/ImageJ"),
         ]
 
 

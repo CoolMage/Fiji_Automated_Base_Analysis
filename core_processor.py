@@ -75,24 +75,27 @@ class CoreProcessor:
         Initialize the core processor.
         
         Args:
-            fiji_path: Path to Fiji executable (auto-detected if None)
+            fiji_path: Path to a Fiji or ImageJ executable (auto-detected if None)
             file_config: File configuration used for matching and ROI discovery
         """
         self.file_config = file_config or FileConfig()
         
-        # Find Fiji executable
+        # Find a Fiji or ImageJ executable, preferring Fiji.
         if fiji_path is None:
             fiji_path = find_fiji()
             if fiji_path is None:
-                raise RuntimeError("Fiji not found. Please install Fiji or provide the path manually.")
+                raise RuntimeError(
+                    "Fiji or ImageJ not found. Install either application or "
+                    "provide the executable path manually."
+                )
         
         if not validate_fiji_path(fiji_path):
-            raise RuntimeError(f"Invalid Fiji path: {fiji_path}")
+            raise RuntimeError(f"Invalid Fiji / ImageJ path: {fiji_path}")
         
         self.fiji_path = fiji_path
         self.macro_builder = MacroBuilder()
 
-        print(f"Core Processor initialized with Fiji at: {self.fiji_path}")
+        print(f"Core Processor initialized with Fiji / ImageJ at: {self.fiji_path}")
 
     @staticmethod
     def _normalize_keywords(keyword_input: Union[str, Sequence[str]]) -> Tuple[str, ...]:
