@@ -54,6 +54,109 @@ def _scale_named_fonts(root: tk.Tk, scale: float) -> None:
         font.configure(size=scaled_size if size > 0 else -scaled_size)
 
 
+def _selection_indicator_size(scale: float) -> int:
+    """Return a readable checkbox/radio size for the current GUI scale."""
+
+    return max(18, min(40, round(16 * scale)))
+
+
+def _draw_image_line(
+    image: tk.PhotoImage,
+    start: tuple[int, int],
+    end: tuple[int, int],
+    color: str,
+    thickness: int,
+) -> None:
+    """Draw a short antialias-free line into a Tk image."""
+
+    x1, y1 = start
+    x2, y2 = end
+    steps = max(abs(x2 - x1), abs(y2 - y1), 1)
+    radius = max(0, thickness // 2)
+    width = image.width()
+    height = image.height()
+
+    for step in range(steps + 1):
+        x = round(x1 + (x2 - x1) * step / steps)
+        y = round(y1 + (y2 - y1) * step / steps)
+        for offset_x in range(-radius, radius + 1):
+            for offset_y in range(-radius, radius + 1):
+                target_x = x + offset_x
+                target_y = y + offset_y
+                if 0 <= target_x < width and 0 <= target_y < height:
+                    image.put(color, (target_x, target_y))
+
+
+def _build_linux_selection_images(
+    root: tk.Tk,
+    scale: float,
+) -> dict[str, tk.PhotoImage]:
+    """Create scalable checkbox and radio images for classic Tk on Linux."""
+
+    size = _selection_indicator_size(scale)
+    margin = max(1, size // 12)
+    border_width = max(2, size // 10)
+    border = "#666666"
+    fill = "#ffffff"
+    selected = "#1976d2"
+
+    check_off = tk.PhotoImage(master=root, width=size, height=size)
+    check_on = tk.PhotoImage(master=root, width=size, height=size)
+    for image, inner_color in ((check_off, fill), (check_on, selected)):
+        image.put(border, to=(margin, margin, size - margin, size - margin))
+        image.put(
+            inner_color,
+            to=(
+                margin + border_width,
+                margin + border_width,
+                size - margin - border_width,
+                size - margin - border_width,
+            ),
+        )
+
+    tick_thickness = max(2, size // 9)
+    _draw_image_line(
+        check_on,
+        (round(size * 0.25), round(size * 0.52)),
+        (round(size * 0.43), round(size * 0.70)),
+        "#ffffff",
+        tick_thickness,
+    )
+    _draw_image_line(
+        check_on,
+        (round(size * 0.43), round(size * 0.70)),
+        (round(size * 0.76), round(size * 0.30)),
+        "#ffffff",
+        tick_thickness,
+    )
+
+    radio_off = tk.PhotoImage(master=root, width=size, height=size)
+    radio_on = tk.PhotoImage(master=root, width=size, height=size)
+    center = (size - 1) / 2
+    outer_radius = size * 0.42
+    inner_radius = outer_radius - border_width
+    dot_radius = size * 0.20
+
+    for y in range(size):
+        for x in range(size):
+            distance_squared = (x - center) ** 2 + (y - center) ** 2
+            if distance_squared <= outer_radius**2:
+                radio_off.put(border, (x, y))
+                radio_on.put(selected, (x, y))
+            if distance_squared <= inner_radius**2:
+                radio_off.put(fill, (x, y))
+                radio_on.put(fill, (x, y))
+            if distance_squared <= dot_radius**2:
+                radio_on.put(selected, (x, y))
+
+    return {
+        "check_off": check_off,
+        "check_on": check_on,
+        "radio_off": radio_off,
+        "radio_on": radio_on,
+    }
+
+
 def _fit_window_size(
     width: int,
     height: int,
@@ -132,6 +235,11 @@ class FijiProcessorGUI:
         self.root = root
         self.ui_scale = _get_ui_scale()
         _scale_named_fonts(self.root, self.ui_scale)
+        self._selection_images = (
+            _build_linux_selection_images(self.root, self.ui_scale)
+            if platform.system().lower() == "linux"
+            else {}
+        )
         self.root.title("Fiji Automated Base Analysis")
         self._set_window_geometry(self.root, 900, 650)
 
@@ -184,6 +292,44 @@ class FijiProcessorGUI:
         window.geometry(
             f"{fitted_width}x{fitted_height}+{offset_x}+{offset_y}"
         )
+
+    def _checkbutton(self, parent: tk.Widget, **kwargs: object) -> tk.Checkbutton:
+        widget = tk.Checkbutton(parent, **kwargs)
+        if self._selection_images:
+            widget.configure(
+                image=self._selection_images["check_off"],
+                selectimage=self._selection_images["check_on"],
+                compound=tk.LEFT,
+                indicatoron=False,
+                relief=tk.FLAT,
+                offrelief=tk.FLAT,
+                overrelief=tk.FLAT,
+                borderwidth=0,
+                highlightthickness=1,
+                anchor=tk.W,
+                padx=max(3, round(3 * self.ui_scale)),
+                pady=max(1, round(2 * self.ui_scale)),
+            )
+        return widget
+
+    def _radiobutton(self, parent: tk.Widget, **kwargs: object) -> tk.Radiobutton:
+        widget = tk.Radiobutton(parent, **kwargs)
+        if self._selection_images:
+            widget.configure(
+                image=self._selection_images["radio_off"],
+                selectimage=self._selection_images["radio_on"],
+                compound=tk.LEFT,
+                indicatoron=False,
+                relief=tk.FLAT,
+                offrelief=tk.FLAT,
+                overrelief=tk.FLAT,
+                borderwidth=0,
+                highlightthickness=1,
+                anchor=tk.W,
+                padx=max(3, round(3 * self.ui_scale)),
+                pady=max(1, round(2 * self.ui_scale)),
+            )
+        return widget
 
     # ------------------------------------------------------------------
     # Widget construction helpers
@@ -351,19 +497,19 @@ class FijiProcessorGUI:
         checkbox_frame = tk.Frame(options_frame)
         checkbox_frame.grid(row=row, column=0, columnspan=2, sticky="w", pady=(5, 0))
 
-        tk.Checkbutton(
+        self._checkbutton(
             checkbox_frame, text="Apply ROI templates", variable=self.apply_roi_var
         ).pack(anchor="w")
-        tk.Checkbutton(
+        self._checkbutton(
             checkbox_frame, text="Save processed images", variable=self.save_processed_var
         ).pack(anchor="w")
-        tk.Checkbutton(
+        self._checkbutton(
             checkbox_frame, text="Save measurement CSV", variable=self.save_measurements_var
         ).pack(anchor="w")
-        tk.Checkbutton(
+        self._checkbutton(
             checkbox_frame, text="Verbose logging", variable=self.verbose_var
         ).pack(anchor="w")
-        tk.Checkbutton(
+        self._checkbutton(
             checkbox_frame, text="Generate measurement summary", variable=self.generate_summary_var
         ).pack(anchor="w")
 
@@ -381,12 +527,12 @@ class FijiProcessorGUI:
             wraplength=760,
         ).grid(row=0, column=0, columnspan=3, sticky="w")
 
-        tk.Checkbutton(
+        self._checkbutton(
             summary_frame,
             text="Generate per-slice mean summary",
             variable=self.generate_slice_average_var,
         ).grid(row=1, column=0, columnspan=3, sticky="w", pady=(8, 0))
-        tk.Checkbutton(
+        self._checkbutton(
             summary_frame,
             text="Generate per-animal mean summary",
             variable=self.generate_animal_average_var,
@@ -540,7 +686,13 @@ class FijiProcessorGUI:
             ("Full macro code", "code"),
             ("Library macro", "library"),
         ):
-            tk.Radiobutton(mode_frame, text=label, variable=mode_var, value=value, command=_show_mode).pack(
+            self._radiobutton(
+                mode_frame,
+                text=label,
+                variable=mode_var,
+                value=value,
+                command=_show_mode,
+            ).pack(
                 anchor="w"
             )
 

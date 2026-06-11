@@ -42,6 +42,7 @@ FIJI_GUI_SCALE=2.0 ./run_gui.sh
 On Linux, directory selection uses `zenity` or `kdialog` when available and
 falls back to Tk's built-in picker. Windows are automatically capped to the
 available screen size so action buttons remain visible on smaller displays.
+Checkbox and radio indicators also follow `FIJI_GUI_SCALE` on Linux.
 
 Open **Macro configuration** to choose either:
 
