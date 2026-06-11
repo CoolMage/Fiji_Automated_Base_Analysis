@@ -6,8 +6,11 @@
 from __future__ import annotations
 
 import os
-import threading
+import platform
 import queue
+import shutil
+import subprocess
+import threading
 from typing import Iterable, List, Sequence, Optional, Union
 
 import tkinter as tk
@@ -24,6 +27,8 @@ from utils.general.measurement_summary_utils import detect_summary_naming_patter
 
 
 DEFAULT_UI_SCALE = 1.5
+WINDOW_HORIZONTAL_MARGIN = 80
+WINDOW_VERTICAL_MARGIN = 100
 
 
 def _get_ui_scale() -> float:
@@ -47,6 +52,77 @@ def _scale_named_fonts(root: tk.Tk, scale: float) -> None:
             continue
         scaled_size = max(1, round(abs(size) * scale))
         font.configure(size=scaled_size if size > 0 else -scaled_size)
+
+
+def _fit_window_size(
+    width: int,
+    height: int,
+    scale: float,
+    screen_width: int,
+    screen_height: int,
+) -> tuple[int, int]:
+    """Scale a window while keeping it inside the usable screen area."""
+
+    available_width = max(320, screen_width - WINDOW_HORIZONTAL_MARGIN)
+    available_height = max(320, screen_height - WINDOW_VERTICAL_MARGIN)
+    return (
+        min(round(width * scale), available_width),
+        min(round(height * scale), available_height),
+    )
+
+
+def _linux_directory_dialog(
+    initial_directory: str,
+    title: str,
+) -> tuple[bool, Optional[str]]:
+    """Use a desktop-native Linux directory picker when one is available."""
+
+    if platform.system().lower() != "linux":
+        return False, None
+
+    initial_directory = os.path.abspath(os.path.expanduser(initial_directory))
+    if not os.path.isdir(initial_directory):
+        initial_directory = os.path.dirname(initial_directory)
+    if not os.path.isdir(initial_directory):
+        initial_directory = os.getcwd()
+
+    zenity = shutil.which("zenity")
+    if zenity:
+        command = [
+            zenity,
+            "--file-selection",
+            "--directory",
+            f"--title={title}",
+            f"--filename={initial_directory.rstrip(os.sep)}{os.sep}",
+        ]
+    else:
+        kdialog = shutil.which("kdialog")
+        if not kdialog:
+            return False, None
+        command = [
+            kdialog,
+            "--title",
+            title,
+            "--getexistingdirectory",
+            initial_directory,
+        ]
+
+    try:
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return False, None
+
+    if result.returncode == 0:
+        selected = result.stdout.strip()
+        return True, selected or None
+    if result.returncode == 1:
+        return True, None
+    return False, None
 
 
 class FijiProcessorGUI:
@@ -86,10 +162,28 @@ class FijiProcessorGUI:
         window: Union[tk.Tk, tk.Toplevel],
         width: int,
         height: int,
+        *,
+        min_width: int = 560,
+        min_height: int = 420,
     ) -> None:
-        scaled_width = round(width * self.ui_scale)
-        scaled_height = round(height * self.ui_scale)
-        window.geometry(f"{scaled_width}x{scaled_height}")
+        screen_width = window.winfo_screenwidth()
+        screen_height = window.winfo_screenheight()
+        fitted_width, fitted_height = _fit_window_size(
+            width,
+            height,
+            self.ui_scale,
+            screen_width,
+            screen_height,
+        )
+        minimum_width = min(round(min_width * self.ui_scale), fitted_width)
+        minimum_height = min(round(min_height * self.ui_scale), fitted_height)
+        window.minsize(minimum_width, minimum_height)
+
+        offset_x = max(0, (screen_width - fitted_width) // 2)
+        offset_y = max(0, (screen_height - fitted_height) // 3)
+        window.geometry(
+            f"{fitted_width}x{fitted_height}+{offset_x}+{offset_y}"
+        )
 
     # ------------------------------------------------------------------
     # Widget construction helpers
@@ -427,6 +521,10 @@ class FijiProcessorGUI:
         mode_frame = tk.LabelFrame(window, text="Macro input mode", padx=10, pady=10)
         mode_frame.pack(fill=tk.X, padx=10, pady=(10, 0))
 
+        # Pack the action bar before the editor so Save/Cancel always remain visible.
+        button_frame = tk.Frame(window, pady=10)
+        button_frame.pack(side=tk.BOTTOM, fill=tk.X, padx=10, pady=(0, 10))
+
         def _show_mode() -> None:
             selected = mode_var.get()
             for frame in mode_frames.values():
@@ -500,7 +598,8 @@ class FijiProcessorGUI:
                 *library_names,
                 command=lambda *_: _update_library_text(),
             )
-            option_menu.pack(anchor="w", pady=(0, 5))
+            option_menu.configure(anchor="w", width=45)
+            option_menu.pack(fill=tk.X, pady=(0, 5))
             library_code_text = scrolledtext.ScrolledText(
                 library_frame,
                 wrap=tk.WORD,
@@ -522,9 +621,6 @@ class FijiProcessorGUI:
 
         window.focus_set()
         _show_mode()
-
-        button_frame = tk.Frame(window, pady=10)
-        button_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
 
         def _apply() -> None:
             previous_mode = self.macro_mode_var.get()
@@ -695,7 +791,17 @@ class FijiProcessorGUI:
     def _browse_directory(self, variable: tk.StringVar | None = None) -> None:
         target = variable or self.base_path_var
         initial = target.get() or os.getcwd()
-        directory = filedialog.askdirectory(initialdir=initial, title="Select base directory")
+        handled, directory = _linux_directory_dialog(
+            initial,
+            "Select base directory",
+        )
+        if not handled:
+            directory = filedialog.askdirectory(
+                parent=self.root,
+                initialdir=initial,
+                mustexist=True,
+                title="Select base directory",
+            )
         if directory:
             target.set(directory)
             if target is self.base_path_var:

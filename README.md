@@ -39,6 +39,10 @@ The GUI uses 150% scaling by default. Override it when launching if needed:
 FIJI_GUI_SCALE=2.0 ./run_gui.sh
 ```
 
+On Linux, directory selection uses `zenity` or `kdialog` when available and
+falls back to Tk's built-in picker. Windows are automatically capped to the
+available screen size so action buttons remain visible on smaller displays.
+
 Open **Macro configuration** to choose either:
 
 - **Full macro code** for pasted Fiji code

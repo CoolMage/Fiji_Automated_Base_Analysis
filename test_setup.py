@@ -4,7 +4,12 @@ import pytest
 
 from config import FijiConfig, FileConfig
 from examples.macros_lib import MACROS_LIB
-from gui import DEFAULT_UI_SCALE, _get_ui_scale
+from gui import (
+    DEFAULT_UI_SCALE,
+    _fit_window_size,
+    _get_ui_scale,
+    _linux_directory_dialog,
+)
 from main import _build_parser, _collect_keywords, _collect_roi_templates, _resolve_macro_code
 from utils.general.fiji_utils import find_fiji
 from utils.general.macro_builder import DEFAULT_MACRO_CODE, ImageData, MacroBuilder
@@ -38,6 +43,42 @@ def test_gui_scale_uses_environment_and_rejects_invalid_values(
 
     monkeypatch.setenv("FIJI_GUI_SCALE", "10")
     assert _get_ui_scale() == DEFAULT_UI_SCALE
+
+
+def test_window_size_is_capped_to_small_linux_screen() -> None:
+    assert _fit_window_size(900, 650, 1.5, 1366, 768) == (1286, 668)
+    assert _fit_window_size(640, 520, 1.5, 1366, 768) == (960, 668)
+
+
+def test_linux_directory_dialog_prefers_zenity(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    captured = {}
+
+    class Result:
+        returncode = 0
+        stdout = f"{tmp_path}\n"
+
+    monkeypatch.setattr("gui.platform.system", lambda: "Linux")
+    monkeypatch.setattr(
+        "gui.shutil.which",
+        lambda name: "/usr/bin/zenity" if name == "zenity" else None,
+    )
+
+    def fake_run(command, **kwargs):
+        captured["command"] = command
+        captured["kwargs"] = kwargs
+        return Result()
+
+    monkeypatch.setattr("gui.subprocess.run", fake_run)
+
+    handled, selected = _linux_directory_dialog(str(tmp_path), "Select directory")
+
+    assert handled is True
+    assert selected == str(tmp_path)
+    assert captured["command"][0] == "/usr/bin/zenity"
+    assert "--directory" in captured["command"]
 
 
 def test_executable_discovery_prefers_fiji_over_imagej(tmp_path) -> None:
