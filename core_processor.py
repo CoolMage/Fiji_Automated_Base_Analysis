@@ -12,10 +12,10 @@ from pathlib import Path
 from dataclasses import dataclass, asdict
 from datetime import datetime
 
-from config import FileConfig, ProcessingConfig
+from config import FileConfig
 from utils.general.fiji_utils import find_fiji, validate_fiji_path
 from utils.general.file_utils import normalize_path, convert_path_for_fiji, is_bioformats_file, extract_by_mask
-from utils.general.macro_builder import MacroBuilder, ImageData, MacroCommand
+from utils.general.macro_builder import MacroBuilder, ImageData
 from utils.general.macros_operation import run_fiji_macro
 from utils.general.measurement_summary_utils import (
     build_slice_and_animal_summary_rows,
@@ -59,179 +59,6 @@ class ProcessingOptions:
     cut_prefix: Optional[str] = None
 
 
-class CommandLibrary:
-    """Library of available macro commands with descriptions."""
-    
-    COMMANDS = {
-        # File operations
-        "open_standard": {
-            "description": "Open image with standard ImageJ method",
-            "parameters": {"input_path": "Path to input file"},
-            "example": "open_standard"
-        },
-        "open_bioformats": {
-            "description": "Open image using Bio-Formats importer",
-            "parameters": {"input_path": "Path to input file"},
-            "example": "open_bioformats"
-        },
-        "save_tiff": {
-            "description": "Save current image as TIFF",
-            "parameters": {"output_path": "Path for output file"},
-            "example": "save_tiff"
-        },
-        "save_csv": {
-            "description": "Save measurements as CSV",
-            "parameters": {"measurements_path": "Path for CSV file"},
-            "example": "save_csv"
-        },
-        
-        # Image processing
-        "convert_8bit": {
-            "description": "Convert image to 8-bit",
-            "parameters": {},
-            "example": "convert_8bit"
-        },
-        "convert_16bit": {
-            "description": "Convert image to 16-bit",
-            "parameters": {},
-            "example": "convert_16bit"
-        },
-        "subtract_background": {
-            "description": "Subtract background using rolling ball algorithm",
-            "parameters": {"radius": "Rolling ball radius (default: 30)"},
-            "example": "subtract_background radius=50"
-        },
-        "median_filter": {
-            "description": "Apply median filter",
-            "parameters": {"radius": "Filter radius (default: 2)"},
-            "example": "median_filter radius=3"
-        },
-        "gaussian_blur": {
-            "description": "Apply Gaussian blur",
-            "parameters": {"sigma": "Blur sigma (default: 2.0)"},
-            "example": "gaussian_blur sigma=1.5"
-        },
-        "enhance_contrast": {
-            "description": "Enhance contrast using histogram equalization",
-            "parameters": {"saturated": "Saturated pixel percentage (default: 0.35)"},
-            "example": "enhance_contrast saturated=0.4"
-        },
-        "threshold": {
-            "description": "Apply threshold",
-            "parameters": {"method": "Threshold method (default: 'Default')"},
-            "example": "threshold method='Otsu'"
-        },
-        
-        # Measurements
-        "measure": {
-            "description": "Measure current selection or entire image",
-            "parameters": {"measurements": "Comma-separated list of measurements"},
-            "example": "measure measurements='area,mean,std'"
-        },
-        "set_measurements": {
-            "description": "Set which measurements to record",
-            "parameters": {"measurements": "Comma-separated list of measurements"},
-            "example": "set_measurements measurements='area,mean,std,min,max'"
-        },
-        "clear_measurements": {
-            "description": "Clear all measurements",
-            "parameters": {},
-            "example": "clear_measurements"
-        },
-        
-        # ROI operations
-        "roi_manager_reset": {
-            "description": "Reset ROI Manager",
-            "parameters": {},
-            "example": "roi_manager_reset"
-        },
-        "roi_manager_open": {
-            "description": "Open ROI file",
-            "parameters": {"roi_path": "Path to ROI file"},
-            "example": "roi_manager_open roi_path='/path/to/roi.zip'"
-        },
-        "roi_manager_select": {
-            "description": "Select ROI by index",
-            "parameters": {"index": "ROI index (0-based)"},
-            "example": "roi_manager_select index=0"
-        },
-        "roi_manager_measure": {
-            "description": "Measure all ROIs in manager",
-            "parameters": {},
-            "example": "roi_manager_measure"
-        },
-        "make_inverse": {
-            "description": "Create inverse of current selection",
-            "parameters": {},
-            "example": "make_inverse"
-        },
-        "roi_manager_add": {
-            "description": "Add current selection to ROI Manager",
-            "parameters": {},
-            "example": "roi_manager_add"
-        },
-        "roi_manager_save": {
-            "description": "Save ROIs to file",
-            "parameters": {"roi_path": "Path to save ROIs"},
-            "example": "roi_manager_save roi_path='/path/to/save.zip'"
-        },
-        
-        # Utility operations
-        "duplicate": {
-            "description": "Duplicate current image",
-            "parameters": {"title": "Title for duplicate", "channels": "Channels to duplicate", "slices": "Slices to duplicate", "frames": "Frames to duplicate"},
-            "example": "duplicate title='Copy' channels=1 slices=1-end frames=1-end"
-        },
-        "close_all": {
-            "description": "Close all open windows",
-            "parameters": {},
-            "example": "close_all"
-        },
-        "quit": {
-            "description": "Quit ImageJ/Fiji",
-            "parameters": {},
-            "example": "quit"
-        },
-        
-        # Display operations
-        "set_option_show_all": {
-            "description": "Set 'Show All' option to false",
-            "parameters": {},
-            "example": "set_option_show_all"
-        },
-        "remove_overlay": {
-            "description": "Remove any overlays",
-            "parameters": {},
-            "example": "remove_overlay"
-        },
-        "roi_manager_show_none": {
-            "description": "Hide all ROIs",
-            "parameters": {},
-            "example": "roi_manager_show_none"
-        },
-        "roi_manager_deselect": {
-            "description": "Deselect all ROIs",
-            "parameters": {},
-            "example": "roi_manager_deselect"
-        }
-    }
-    
-    @classmethod
-    def get_command_info(cls, command_name: str) -> Optional[Dict[str, Any]]:
-        """Get information about a specific command."""
-        return cls.COMMANDS.get(command_name)
-    
-    @classmethod
-    def list_commands(cls) -> Dict[str, Dict[str, Any]]:
-        """Get all available commands."""
-        return cls.COMMANDS.copy()
-    
-    @classmethod
-    def validate_command(cls, command_name: str) -> bool:
-        """Check if a command exists."""
-        return command_name in cls.COMMANDS
-
-
 class CoreProcessor:
     """
     Core document processor for database-driven Fiji operations.
@@ -242,7 +69,6 @@ class CoreProcessor:
     def __init__(
         self,
         fiji_path: Optional[str] = None,
-        processing_config: Optional[ProcessingConfig] = None,
         file_config: Optional[FileConfig] = None,
     ):
         """
@@ -250,10 +76,8 @@ class CoreProcessor:
         
         Args:
             fiji_path: Path to Fiji executable (auto-detected if None)
-            processing_config: Processing configuration used by the macro builder
             file_config: File configuration used for matching and ROI discovery
         """
-        self.processing_config = processing_config or ProcessingConfig()
         self.file_config = file_config or FileConfig()
         
         # Find Fiji executable
@@ -266,8 +90,7 @@ class CoreProcessor:
             raise RuntimeError(f"Invalid Fiji path: {fiji_path}")
         
         self.fiji_path = fiji_path
-        self.macro_builder = MacroBuilder(self.processing_config, self.file_config)
-        self.command_library = CommandLibrary()
+        self.macro_builder = MacroBuilder()
 
         print(f"Core Processor initialized with Fiji at: {self.fiji_path}")
 
@@ -416,18 +239,18 @@ class CoreProcessor:
         self,
         base_path: str,
         keyword: Union[str, Sequence[str]],
-        macro_commands: Union[str, List[str], None] = None,
+        macro_code: Optional[str] = None,
         options: Optional[ProcessingOptions] = None,
         verbose: bool = True,
         cancel_event: Optional[Any] = None,
     ) -> Dict[str, Any]:
         """
-        Process documents by keyword with specified macro commands.
+        Process documents by keyword with complete Fiji macro code.
         
         Args:
             base_path: Base directory containing documents
             keyword: Keyword or sequence of keywords to search for in filenames
-            macro_commands: Macro commands to apply (string, list, or None for default)
+            macro_code: Complete Fiji macro code or a template with placeholders
             options: Optional processing options
             verbose: Whether to print detailed output
             
@@ -436,6 +259,16 @@ class CoreProcessor:
         """
         if options is None:
             options = ProcessingOptions()
+
+        if not isinstance(macro_code, str) or not macro_code.strip():
+            return {
+                "success": False,
+                "error": "Complete Fiji macro code is required.",
+                "processed_documents": [],
+                "failed_documents": [],
+                "measurements": [],
+                "searched_keywords": [],
+            }
 
         try:
             normalized_keywords = self._normalize_keywords(keyword)
@@ -506,7 +339,7 @@ class CoreProcessor:
             try:
                 result = self._process_single_document(
                     doc,
-                    macro_commands,
+                    macro_code,
                     options,
                     verbose,
                     processed_dir,
@@ -579,7 +412,7 @@ class CoreProcessor:
     def _process_single_document(
         self,
         doc: DocumentInfo,
-        macro_commands: Union[str, List[str], None],
+        macro_template: str,
         options: ProcessingOptions,
         verbose: bool,
         processed_dir: Optional[str] = None,
@@ -651,100 +484,7 @@ class CoreProcessor:
                 measurements_native_path
             )
 
-        # Build macro
-        custom_macro_template: Optional[str] = None
-        macro_sequence: Union[List[Any], List[MacroCommand]]
-
-        if macro_commands is None:
-            # Default: open, measure, optionally save outputs, quit
-            macro_sequence = ["open_standard", "measure"]
-            if options.save_processed_files:
-                macro_sequence.append("save_tiff")
-            if options.save_measurements_csv:
-                macro_sequence.append("save_csv")
-            macro_sequence.append("quit")
-        elif isinstance(macro_commands, str):
-            stripped_macro = macro_commands.strip()
-            if "\n" in stripped_macro or ";" in stripped_macro:
-                custom_macro_template = stripped_macro
-                macro_sequence = []
-            else:
-                macro_sequence = stripped_macro.split()
-        else:
-            macro_sequence = list(macro_commands)
-
-        if custom_macro_template is None:
-            # Build macro from command list or MacroCommand objects
-            commands: List[MacroCommand] = []
-            for item in macro_sequence:
-                if isinstance(item, MacroCommand):
-                    commands.append(item)
-                    continue
-
-                cmd_str = str(item)
-                if " " in cmd_str and "=" in cmd_str:
-                    # Command with parameters (e.g., "subtract_background radius=50")
-                    parts = cmd_str.split(" ", 1)
-                    cmd_name = parts[0]
-                    params = {}
-                    if len(parts) > 1:
-                        for param in parts[1].split():
-                            if "=" in param:
-                                key, value = param.split("=", 1)
-                                params[key.strip()] = value.strip()
-                    commands.append(MacroCommand(cmd_name.strip(), params))
-                else:
-                    commands.append(MacroCommand(cmd_str.strip()))
-
-            # Ensure quit command is present to close Fiji
-            if not any(cmd.command == "quit" for cmd in commands):
-                commands.append(MacroCommand("quit"))
-            
-            # Ensure BatchMode command is present to close Fiji
-            if not any(cmd.command == "BatchMode" for cmd in commands):
-                commands.insert(0, MacroCommand("BatchMode"))
-
-            needs_processed_output = any(cmd.command == "save_tiff" for cmd in commands)
-            needs_measurement_output = any(cmd.command == "save_csv" for cmd in commands)
-
-            if needs_processed_output and not image_data.output_path:
-                target_dir = processed_dir or os.path.join(
-                    os.path.dirname(doc.file_path), options.processed_folder
-                )
-                target_dir = os.path.abspath(target_dir)
-                os.makedirs(target_dir, exist_ok=True)
-
-                output_filename = f"{doc.filename}_{options.custom_suffix}.tif"
-                output_native_path = os.path.join(target_dir, output_filename)
-                image_data.output_path_native = output_native_path
-                image_data.output_path = convert_path_for_fiji(output_native_path)
-
-            if needs_measurement_output and not image_data.measurements_path:
-                csv_dir = measurements_dir or os.path.join(
-                    os.path.dirname(doc.file_path), options.measurements_folder
-                )
-                csv_dir = os.path.abspath(csv_dir)
-                os.makedirs(csv_dir, exist_ok=True)
-
-                csv_filename = f"{doc.filename}_{options.custom_suffix}.csv"
-                measurements_native_path = os.path.join(csv_dir, csv_filename)
-                image_data.measurements_path_native = measurements_native_path
-                image_data.measurements_path = convert_path_for_fiji(
-                    measurements_native_path
-                )
-
-            macro_code = self.macro_builder.build_macro_from_commands(commands)
-
-            # Substitute template variables
-            macro_code = macro_code.format(
-                input_path=image_data.input_path,
-                output_path=image_data.output_path,
-                measurements_path=image_data.measurements_path
-            )
-        else:
-            macro_code = self.macro_builder.build_custom_macro(
-                custom_macro_template, image_data
-            )
+        macro_code = self.macro_builder.build_macro(macro_template, image_data)
         
         if verbose:
             print("Generated macro:")
@@ -939,15 +679,10 @@ class CoreProcessor:
 
         return summary_rows, fieldnames
     
-    def get_available_commands(self) -> Dict[str, Dict[str, Any]]:
-        """Get all available commands with descriptions."""
-        return self.command_library.list_commands()
-    
     def validate_setup(self) -> Dict[str, Any]:
         """Validate the current setup."""
         return {
             "fiji_path": self.fiji_path,
             "fiji_valid": validate_fiji_path(self.fiji_path),
-            "available_commands": len(self.command_library.COMMANDS),
             "supported_extensions": self.file_config.supported_extensions
         }

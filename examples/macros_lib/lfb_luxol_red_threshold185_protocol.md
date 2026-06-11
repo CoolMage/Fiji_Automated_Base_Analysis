@@ -52,7 +52,7 @@ python main.py "/Volumes/T7_Shield/Luxol" \
   --keyword 4MU --keyword Control \
   --apply-roi --roi-template "{name}.roi" \
   --save-measurements \
-  --commands "$(cat examples/macros_lib/lfb_luxol_red_threshold185_macro.ijm)"
+  --macro-file examples/macros_lib/lfb_luxol_red_threshold185_macro.ijm
 ```
 
 ## Notes

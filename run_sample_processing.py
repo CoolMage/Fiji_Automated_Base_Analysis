@@ -7,15 +7,12 @@ for your own automation scripts.
 """
 from __future__ import annotations
 
-from pathlib import Path
 from pprint import pprint
 
 from config import FileConfig
 from core_processor import CoreProcessor, ProcessingOptions
 
 from examples.macros_lib import MACROS_LIB
-
-
 
 def build_processor() -> CoreProcessor:
     """Create a CoreProcessor with example file configuration overrides."""
@@ -46,28 +43,16 @@ def build_options() -> ProcessingOptions:
 
 
 def main() -> None:
-    #base_path = Path(__file__).parent / "sample_documents"
     base_path = "/Users/savvaarutsev/Documents/Data_Test/Detile_astrocytes"
     processor = build_processor()
     options = build_options()
 
-
-    # macro_commands = [
-    #     "open_bioformats",
-    #     'subtract_background radius=30',
-    #     'median_filter radius=2',
-    #     'enhance_contrast saturated=0.4 normalize',
-    #     "save_tiff",
-    #     "measure",
-    #     "save_csv",
-    # ]
-
-    macro_commands = MACROS_LIB["measure_matching_roi_per_channel_after_mip"]
+    macro_code = MACROS_LIB["measure_matching_roi_per_channel_after_mip"]
 
     result = processor.process_documents(
         base_path=str(base_path),
         keyword=("Potkan1"),
-        macro_commands=macro_commands,
+        macro_code=macro_code,
         options=options,
         verbose=True,
     )

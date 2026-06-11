@@ -43,7 +43,8 @@ if [ $# -eq 0 ]; then
     echo "Examples:"
     echo "  $0 /path/to/documents --keyword 4MU"
     echo "  $0 /path/to/documents --keyword 4MU --keyword Control --apply-roi"
-    echo "  $0 /path/to/documents --keyword Control --commands \"open_standard measure quit\""
+    echo "  $0 /path/to/documents --keyword Control --macro-file analysis.ijm"
+    echo "  $0 --list-macros"
     echo "  $0 /path/to/documents --validate"
     echo ""
     exit 0

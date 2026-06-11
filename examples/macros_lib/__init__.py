@@ -1294,22 +1294,6 @@ MACROS_LIB.add(
 )
 
 MACROS_LIB.add_from_file(
-    "create_kymographs_from_rois",
-    "fiji_kymograph_macro.ijm",
-    aliases=("create_kymographs",),
-    profile=MacroGuiProfile(
-        apply_roi_templates=True,
-        save_processed_images=True,
-        save_measurement_csv=False,
-        generate_measurement_summary=False,
-        processed_suffix="processed",
-        measurements_folder="Measurements",
-        processed_folder="Kymographs",
-        measurement_prefix="measurements_summary",
-        note="Creates kymograph images from ROI lines and primarily writes processed image outputs.",
-    ),
-)
-MACROS_LIB.add_from_file(
     "measure_lfb_red_channel_in_rois",
     "lfb_luxol_red_threshold185_macro.ijm",
     aliases=("lfb_luxol_red_threshold185",),

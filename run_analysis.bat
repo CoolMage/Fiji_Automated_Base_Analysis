@@ -30,8 +30,8 @@ if "%~1"=="" (
     echo Examples:
     echo   run_analysis.bat C:\Data --keyword 4MU
     echo   run_analysis.bat C:\Data --keyword 4MU --keyword Control --apply-roi
-    echo   run_analysis.bat C:\Data --keyword Control --commands "open_standard measure quit"
-    echo   run_analysis.bat --list-commands
+    echo   run_analysis.bat C:\Data --keyword Control --macro-file analysis.ijm
+    echo   run_analysis.bat --list-macros
     echo.
     pause
     exit /b 0
