@@ -154,6 +154,112 @@ MACROS_LIB.add(
 )
 
 MACROS_LIB.add(
+    "create_rgb_mip_blue_green_red",
+    '''
+    // Create an RGB max-intensity projection from a three- or four-channel image.
+    //
+    // Channel mapping:
+    // - 3-channel input: source C1 -> blue, C2 -> green, C3 -> red
+    // - 4-channel input: source C2 is removed, then C1 -> blue, C3 -> green, C4 -> red
+    //
+    // --- Editable parameters ---
+    inputPath = "{img_path_fiji}";
+    outputDir = "{output_dir_fiji_slash}";
+    fallbackOutputDir = "{img_dir_fiji_slash}";
+    outputStem = "{file_stem}";
+    outputSuffix = "_MIP_RGB";
+    projectionMethod = "Max Intensity";
+    batchModeEnabled = true;
+    closeAllWhenDone = true;
+    quitWhenDone = true;
+
+    continueProcessing = true;
+
+    // --- Open image and validate channel count ---
+    if (batchModeEnabled) setBatchMode(true);
+    run("Bio-Formats Macro Extensions");
+    Ext.openImagePlus(inputPath);
+    originalTitle = getTitle();
+    getDimensions(imageWidth, imageHeight, channelCount, sliceCount, frameCount);
+
+    if (channelCount != 3 && channelCount != 4) {{
+        print(
+            "WARN: Expected a 3- or 4-channel image, but found "
+            + channelCount + " channel(s): " + inputPath
+        );
+        continueProcessing = false;
+    }}
+
+    // For four-channel images, retain source channels C1, C3, and C4.
+    if (continueProcessing && channelCount == 4) {{
+        run("Arrange Channels...", "new=134");
+    }}
+
+    if (continueProcessing) {{
+        // Project along Z while preserving the three selected channels.
+        run("Z Project...", "projection=[" + projectionMethod + "]");
+        projectionTitle = getTitle();
+
+        selectWindow(originalTitle);
+        run("Close");
+        selectWindow(projectionTitle);
+
+        // Split projected channels, then map source order to B, G, R.
+        run("Split Channels");
+        projectedChannels = getList("image.titles");
+
+        if (projectedChannels.length != 3) {{
+            print(
+                "WARN: Expected three projected channel images, but found "
+                + projectedChannels.length + "."
+            );
+            continueProcessing = false;
+        }}
+    }}
+
+    if (continueProcessing) {{
+        blueSource = projectedChannels[0];
+        greenSource = projectedChannels[1];
+        redSource = projectedChannels[2];
+
+        run(
+            "Merge Channels...",
+            "c1=[" + redSource + "] "
+            + "c2=[" + greenSource + "] "
+            + "c3=[" + blueSource + "]"
+        );
+        rename(outputStem + outputSuffix);
+
+        if (outputDir == "" || outputDir == "null" || outputDir == "/") {{
+            outputDir = fallbackOutputDir;
+        }}
+        if (!File.exists(outputDir)) File.makeDirectory(outputDir);
+
+        saveAs("Tiff", outputDir + outputStem + outputSuffix + ".tif");
+    }}
+
+    if (closeAllWhenDone) run("Close All");
+    if (quitWhenDone) run("Quit");
+    ''',
+    aliases=("rgb_mip_blue_green_red",),
+    profile=MacroGuiProfile(
+        apply_roi_templates=False,
+        save_processed_images=True,
+        save_measurement_csv=False,
+        generate_measurement_summary=False,
+        processed_suffix="processed",
+        measurements_folder="Measurements",
+        processed_folder="Processed_Files",
+        measurement_prefix="measurements_summary",
+        note=(
+            "Creates and saves an RGB max-intensity projection. Source C1 is "
+            "blue, the next retained channel is green, and the last is red; "
+            "source C2 is removed from four-channel inputs."
+        ),
+    ),
+)
+
+MACROS_LIB.add(
     "adjust_channel_2_and_save_as_tiff",
     '''
     // Extract channel 2, create a MIP, apply brightness/contrast settings, and save the adjusted result as a TIFF file.

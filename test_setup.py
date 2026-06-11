@@ -76,6 +76,23 @@ def test_all_library_macros_format_without_escaped_block_braces() -> None:
         assert "}}" not in formatted
 
 
+def test_rgb_mip_macro_maps_channels_and_saves_tiff() -> None:
+    macro_name = "create_rgb_mip_blue_green_red"
+    macro_code = MACROS_LIB[macro_name]
+    profile = MACROS_LIB.get_profile(macro_name)
+
+    assert 'run("Arrange Channels...", "new=134");' in macro_code
+    assert 'run("Z Project...", "projection=[" + projectionMethod + "]");' in macro_code
+    assert '"c1=[" + redSource + "] "' in macro_code
+    assert '+ "c2=[" + greenSource + "] "' in macro_code
+    assert '+ "c3=[" + blueSource + "]"' in macro_code
+    assert "create" not in macro_code[macro_code.index('"Merge Channels..."') :]
+    assert 'saveAs("Tiff", outputDir + outputStem + outputSuffix + ".tif");' in macro_code
+    assert profile is not None
+    assert profile.save_processed_images is True
+    assert profile.save_measurement_csv is False
+
+
 def test_cli_resolves_only_complete_code_or_library(tmp_path) -> None:
     macro_path = tmp_path / "analysis.ijm"
     macro_path.write_text('open("{input_path}");', encoding="utf-8")
