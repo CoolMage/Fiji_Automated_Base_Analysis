@@ -28,8 +28,8 @@ if "%~1"=="" (
     echo Usage: run_analysis.bat [path_to_documents] [options]
     echo.
     echo Examples:
-    echo   run_analysis.bat C:\Data --keyword 4MU
-    echo   run_analysis.bat C:\Data --keyword 4MU --keyword Control --apply-roi
+    echo   run_analysis.bat C:\Data --keyword Exp
+    echo   run_analysis.bat C:\Data --keyword Exp --keyword Control --apply-roi
     echo   run_analysis.bat C:\Data --keyword Control --macro-file analysis.ijm
     echo   run_analysis.bat --list-macros
     echo.

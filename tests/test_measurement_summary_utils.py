@@ -10,30 +10,30 @@ from utils.general.measurement_summary_utils import (
 
 
 def test_detect_summary_naming_patterns(tmp_path: Path) -> None:
-    (tmp_path / "4MU").mkdir()
+    (tmp_path / "Exp").mkdir()
     (tmp_path / "Control").mkdir()
 
-    (tmp_path / "4MU" / "RECA1_GFAP_S100A10_4MU_Potkan1_sc_overview_cut3_x20.ims").write_text("")
-    (tmp_path / "4MU" / "RECA1_GFAP_S100A10_4MU_Potkan2_sc_overview_cut1_x20.ims").write_text("")
+    (tmp_path / "Exp" / "RECA1_GFAP_S100A10_Exp_Potkan1_sc_overview_cut3_x20.ims").write_text("")
+    (tmp_path / "Exp" / "RECA1_GFAP_S100A10_Exp_Potkan2_sc_overview_cut1_x20.ims").write_text("")
     (tmp_path / "Control" / "RECA1_GFAP_S100A10_Control_DIRECTaav4_sc_overview_cut2_x20.ims").write_text("")
 
     detected = detect_summary_naming_patterns(
         str(tmp_path),
-        ["4MU", "Control"],
+        ["Exp", "Control"],
         supported_extensions=[".ims"],
     )
 
     assert detected["cut_prefix"] == "cut"
-    assert detected["keyword_animal_prefixes"]["4MU"] == "Potkan"
+    assert detected["keyword_animal_prefixes"]["Exp"] == "Potkan"
     assert detected["keyword_animal_prefixes"]["Control"] == "DIRECTaav"
 
 
 def test_build_slice_and_animal_summary_rows_average_animal_over_slice_means() -> None:
     summary_rows = [
         {
-            "document_name": "RECA1_GFAP_S100A10_4MU_Potkan1_sc_overview_cut1_x20",
-            "matched_keyword": "4MU",
-            "keywords": "4MU, Control",
+            "document_name": "RECA1_GFAP_S100A10_Exp_Potkan1_sc_overview_cut1_x20",
+            "matched_keyword": "Exp",
+            "keywords": "Exp, Control",
             "Channel": "C2",
             "Scope": "Particles",
             "ROI": "ROI_1",
@@ -41,9 +41,9 @@ def test_build_slice_and_animal_summary_rows_average_animal_over_slice_means() -
             "Mean": "100",
         },
         {
-            "document_name": "RECA1_GFAP_S100A10_4MU_Potkan1_sc_overview_cut1_x20",
-            "matched_keyword": "4MU",
-            "keywords": "4MU, Control",
+            "document_name": "RECA1_GFAP_S100A10_Exp_Potkan1_sc_overview_cut1_x20",
+            "matched_keyword": "Exp",
+            "keywords": "Exp, Control",
             "Channel": "C2",
             "Scope": "Particles",
             "ROI": "ROI_2",
@@ -51,9 +51,9 @@ def test_build_slice_and_animal_summary_rows_average_animal_over_slice_means() -
             "Mean": "300",
         },
         {
-            "document_name": "RECA1_GFAP_S100A10_4MU_Potkan1_sc_overview_cut2_x20",
-            "matched_keyword": "4MU",
-            "keywords": "4MU, Control",
+            "document_name": "RECA1_GFAP_S100A10_Exp_Potkan1_sc_overview_cut2_x20",
+            "matched_keyword": "Exp",
+            "keywords": "Exp, Control",
             "Channel": "C2",
             "Scope": "Particles",
             "ROI": "ROI_1",
@@ -64,7 +64,7 @@ def test_build_slice_and_animal_summary_rows_average_animal_over_slice_means() -
 
     aggregated = build_slice_and_animal_summary_rows(
         summary_rows,
-        keyword_animal_prefixes={"4MU": "Potkan"},
+        keyword_animal_prefixes={"Exp": "Potkan"},
         cut_prefix="cut",
     )
 
@@ -90,7 +90,7 @@ def test_detect_and_aggregate_hyphenated_animal_ids() -> None:
         {
             "document_name": "RECA1_GFAP_S100A10_Control_DIRECTaav9-1_sc_overview_cut1_x20",
             "matched_keyword": "Control",
-            "keywords": "4MU, Control",
+            "keywords": "Exp, Control",
             "Channel": "C2",
             "Scope": "Particles",
             "ROI": "RECA1_GFAP_S100A10_Control_DIRECTaav9-1_sc_overview_cut1_x20",
@@ -100,7 +100,7 @@ def test_detect_and_aggregate_hyphenated_animal_ids() -> None:
         {
             "document_name": "RECA1_GFAP_S100A10_Control_DIRECTaav9-1_sc_overview_cut2_x20",
             "matched_keyword": "Control",
-            "keywords": "4MU, Control",
+            "keywords": "Exp, Control",
             "Channel": "C2",
             "Scope": "Particles",
             "ROI": "RECA1_GFAP_S100A10_Control_DIRECTaav9-1_sc_overview_cut2_x20",
@@ -110,7 +110,7 @@ def test_detect_and_aggregate_hyphenated_animal_ids() -> None:
         {
             "document_name": "RECA1_GFAP_S100A10_Control_DIRECTaav9-2_sc_overview_cut1_x20",
             "matched_keyword": "Control",
-            "keywords": "4MU, Control",
+            "keywords": "Exp, Control",
             "Channel": "C2",
             "Scope": "Particles",
             "ROI": "RECA1_GFAP_S100A10_Control_DIRECTaav9-2_sc_overview_cut1_x20",
@@ -149,46 +149,46 @@ def test_detect_and_aggregate_hyphenated_animal_ids() -> None:
 def test_animal_summary_keeps_measurement_types_separate() -> None:
     summary_rows = [
         {
-            "document_name": "4MU_Potkan1_cut1",
-            "matched_keyword": "4MU",
-            "keywords": "4MU, Control",
+            "document_name": "Exp_Potkan1_cut1",
+            "matched_keyword": "Exp",
+            "keywords": "Exp, Control",
             "MeasurementType": "RawIntensity",
             "Channel": "C1",
             "Scope": "RawROI",
-            "ROI": "4MU_Potkan1_cut1",
+            "ROI": "Exp_Potkan1_cut1",
             "Area": "10",
             "Mean": "100",
         },
         {
-            "document_name": "4MU_Potkan1_cut2",
-            "matched_keyword": "4MU",
-            "keywords": "4MU, Control",
+            "document_name": "Exp_Potkan1_cut2",
+            "matched_keyword": "Exp",
+            "keywords": "Exp, Control",
             "MeasurementType": "RawIntensity",
             "Channel": "C1",
             "Scope": "RawROI",
-            "ROI": "4MU_Potkan1_cut2",
+            "ROI": "Exp_Potkan1_cut2",
             "Area": "30",
             "Mean": "300",
         },
         {
-            "document_name": "4MU_Potkan1_cut1",
-            "matched_keyword": "4MU",
-            "keywords": "4MU, Control",
+            "document_name": "Exp_Potkan1_cut1",
+            "matched_keyword": "Exp",
+            "keywords": "Exp, Control",
             "MeasurementType": "ThresholdedIntensity",
             "Channel": "C1",
             "Scope": "ThresholdedROI",
-            "ROI": "4MU_Potkan1_cut1",
+            "ROI": "Exp_Potkan1_cut1",
             "Area": "4",
             "Mean": "200",
         },
         {
-            "document_name": "4MU_Potkan1_cut2",
-            "matched_keyword": "4MU",
-            "keywords": "4MU, Control",
+            "document_name": "Exp_Potkan1_cut2",
+            "matched_keyword": "Exp",
+            "keywords": "Exp, Control",
             "MeasurementType": "ThresholdedIntensity",
             "Channel": "C1",
             "Scope": "ThresholdedROI",
-            "ROI": "4MU_Potkan1_cut2",
+            "ROI": "Exp_Potkan1_cut2",
             "Area": "8",
             "Mean": "220",
         },
@@ -199,7 +199,7 @@ def test_animal_summary_keeps_measurement_types_separate() -> None:
 
     aggregated = build_slice_and_animal_summary_rows(
         summary_rows,
-        keyword_animal_prefixes={"4MU": "Potkan"},
+        keyword_animal_prefixes={"Exp": "Potkan"},
         cut_prefix="cut",
     )
 

@@ -43,13 +43,13 @@ Recommended ROI template for your dataset:
 
 Recommended keywords:
 
-- `--keyword 4MU --keyword Control`
+- `--keyword Exp --keyword Control`
 
 Example:
 
 ```bash
 python main.py "/Volumes/T7_Shield/Luxol" \
-  --keyword 4MU --keyword Control \
+  --keyword Exp --keyword Control \
   --apply-roi --roi-template "{name}.roi" \
   --save-measurements \
   --macro-file examples/macros_lib/lfb_luxol_red_threshold185_macro.ijm

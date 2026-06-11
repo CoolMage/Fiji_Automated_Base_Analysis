@@ -95,8 +95,8 @@ def test_cli_no_longer_accepts_pseudo_commands() -> None:
 
 
 def test_keyword_and_roi_helpers() -> None:
-    assert _collect_keywords(["4MU, Control", "treated"]) == [
-        "4MU",
+    assert _collect_keywords(["Exp, Control", "treated"]) == [
+        "Exp",
         "Control",
         "treated",
     ]

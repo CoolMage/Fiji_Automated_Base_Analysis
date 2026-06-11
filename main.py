@@ -76,7 +76,7 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""Examples:
-  python main.py /data/study --keyword 4MU
+  python main.py /data/study --keyword Exp
   python main.py /data/study --keyword Control --macro-file analysis.ijm
   python main.py /data/study --keyword Control \
       --macro-library measure_matching_roi_per_channel_after_mip --apply-roi

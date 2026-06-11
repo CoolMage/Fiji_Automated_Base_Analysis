@@ -104,12 +104,12 @@ opens the current image, runs `Measure`, closes images, and quits Fiji.
 ├── Experiment_A
 │   ├── 01_Control_MIP.tif
 │   ├── 01_Control_MIP.roi
-│   ├── 02_4MU_pre.tif
-│   └── 02_4MU_pre.zip
+│   ├── 02_Exp_pre.tif
+│   └── 02_Exp_pre.zip
 └── Experiment_B
     ├── 03_Control_post.tif
     ├── 03_Control_post_RoiSet.zip
-    └── 04_4MU_followup.tif
+    └── 04_Exp_followup.tif
 ```
 
 Default ROI templates cover `image.roi`, `image.zip`, and
@@ -138,7 +138,7 @@ options = ProcessingOptions(
 
 result = processor.process_documents(
     base_path="/data/study",
-    keyword=["4MU", "Control"],
+    keyword=["Exp", "Control"],
     macro_code=MACROS_LIB["measure_matching_roi_per_channel_after_mip"],
     options=options,
 )

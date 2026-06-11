@@ -9,22 +9,22 @@ sample_documents/
 ├── Experiment_A
 │   ├── 01_Control_MIP.tif
 │   ├── 01_Control_MIP.roi
-│   ├── 02_4MU_pre.tif
-│   └── 02_4MU_pre.zip
+│   ├── 02_Exp_pre.tif
+│   └── 02_Exp_pre.zip
 └── Experiment_B
     ├── 03_Control_post.tif
     ├── 03_Control_post_RoiSet.zip
-    └── 04_4MU_followup.tif
+    └── 04_Exp_followup.tif
 ```
 
 Try these commands from the repository root to explore different scenarios:
 
 ```bash
 # Match a single keyword
-python main.py examples/sample_documents --keyword 4MU --verbose
+python main.py examples/sample_documents --keyword Exp --verbose
 
 # Match multiple keywords and apply ROIs
-python main.py examples/sample_documents --keyword 4MU --keyword Control --apply-roi \
+python main.py examples/sample_documents --keyword Exp --keyword Control --apply-roi \
     --roi-template "{name}.roi" --roi-template "{name}_RoiSet.zip" --verbose
 
 # Enforce a secondary filter and save processed output
