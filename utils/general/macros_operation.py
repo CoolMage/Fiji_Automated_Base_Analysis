@@ -103,6 +103,14 @@ def _has_fiji_runtime_failure(stdout_text: str, stderr_text: str) -> bool:
     return any(marker in combined for marker in failure_markers)
 
 
+def _macro_launch_flag(system: str, use_classic_ij1: bool) -> str:
+    """Choose the ImageJ macro mode without duplicating headless batch flags."""
+
+    if system == "darwin" and use_classic_ij1:
+        return "-macro"
+    return "-batch"
+
+
 def run_fiji_macro(fiji_path: str, macro_code: str, 
                   timeout: int = 300, 
                   additional_args: Optional[list] = None,
@@ -158,8 +166,6 @@ def run_fiji_macro(fiji_path: str, macro_code: str,
                 runtime_args.extend(["--memory", "4G"])
             if use_classic_ij1 and "--main-class" not in arg_text:
                 runtime_args.extend(["--main-class", "ij.ImageJ"])
-            if not use_classic_ij1 and "--headless" not in arg_text:
-                runtime_args.append("--headless")
 
         # Launch process using Popen to allow cancellation
         use_shell = system == "windows"
@@ -201,7 +207,12 @@ def run_fiji_macro(fiji_path: str, macro_code: str,
             runtime_args.extend(additional_args)
         if runtime_args:
             cmd.extend(runtime_args)
-        cmd.extend(["-macro", macro_file_path])
+        cmd.extend(
+            [
+                _macro_launch_flag(system, use_classic_ij1),
+                macro_file_path,
+            ]
+        )
         stdout_data = ""
         stderr_data = ""
         remaining = timeout
