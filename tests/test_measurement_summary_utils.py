@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from utils.general.measurement_summary_utils import (
+from fiji_automated_analysis.utils.general.measurement_summary_utils import (
     build_slice_and_animal_summary_rows,
     detect_summary_naming_patterns,
     split_summary_rows_by_measurement_type,

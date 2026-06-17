@@ -2,18 +2,26 @@
 
 import pytest
 
-from config import FijiConfig, FileConfig
-from examples.macros_lib import MACROS_LIB
-from gui import (
+import fiji_automated_analysis.cli as cli
+from fiji_automated_analysis.config import FijiConfig, FileConfig
+from fiji_automated_analysis.macros_lib import MACROS_LIB
+from fiji_automated_analysis.gui import (
     DEFAULT_UI_SCALE,
     _fit_window_size,
     _get_ui_scale,
     _linux_directory_dialog,
     _selection_indicator_size,
 )
-from main import _build_parser, _collect_keywords, _collect_roi_templates, _resolve_macro_code
-from utils.general.fiji_utils import find_fiji
-from utils.general.macro_builder import DEFAULT_MACRO_CODE, ImageData, MacroBuilder
+from fiji_automated_analysis.cli import (
+    _build_parser,
+    _collect_keywords,
+    _collect_psf_paths,
+    _collect_roi_templates,
+    _resolve_macro_code,
+    main as cli_main,
+)
+from fiji_automated_analysis.utils.general.fiji_utils import find_fiji
+from fiji_automated_analysis.utils.general.macro_builder import DEFAULT_MACRO_CODE, ImageData, MacroBuilder
 
 
 def test_configuration_imports() -> None:
@@ -24,7 +32,7 @@ def test_configuration_imports() -> None:
 def test_linux_search_paths_include_fiji_and_imagej(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("config.platform.system", lambda: "Linux")
+    monkeypatch.setattr("fiji_automated_analysis.config.platform.system", lambda: "Linux")
 
     paths = FijiConfig.get_fiji_paths()
 
@@ -67,9 +75,9 @@ def test_linux_directory_dialog_prefers_zenity(
         returncode = 0
         stdout = f"{tmp_path}\n"
 
-    monkeypatch.setattr("gui.platform.system", lambda: "Linux")
+    monkeypatch.setattr("fiji_automated_analysis.gui.platform.system", lambda: "Linux")
     monkeypatch.setattr(
-        "gui.shutil.which",
+        "fiji_automated_analysis.gui.shutil.which",
         lambda name: "/usr/bin/zenity" if name == "zenity" else None,
     )
 
@@ -78,7 +86,7 @@ def test_linux_directory_dialog_prefers_zenity(
         captured["kwargs"] = kwargs
         return Result()
 
-    monkeypatch.setattr("gui.subprocess.run", fake_run)
+    monkeypatch.setattr("fiji_automated_analysis.gui.subprocess.run", fake_run)
 
     handled, selected = _linux_directory_dialog(str(tmp_path), "Select directory")
 
@@ -231,3 +239,95 @@ def test_keyword_and_roi_helpers() -> None:
     assert _collect_roi_templates(
         ["{name}.roi", "{name}_ROI.zip, RoiSet_{name}.zip"]
     ) == ["{name}.roi", "{name}_ROI.zip", "RoiSet_{name}.zip"]
+    assert _collect_psf_paths(["C1.tif;C2.tif", "C3.tif"]) == [
+        "C1.tif",
+        "C2.tif",
+        "C3.tif",
+    ]
+
+
+def test_cli_accepts_deconvolution_preset() -> None:
+    args = _build_parser().parse_args(
+        [
+            "/tmp/data",
+            "--keyword",
+            "Control",
+            "--deconvolve",
+            "--psf",
+            "/tmp/C1.tif",
+            "--deconvolution-iterations",
+            "15",
+            "--deconvolution-memory-gb",
+            "12",
+        ]
+    )
+
+    assert args.deconvolve is True
+    assert args.psf == ["/tmp/C1.tif"]
+    assert args.deconvolution_iterations == 15
+    assert args.deconvolution_memory_gb == 12
+
+
+def test_cli_measurement_summary_is_opt_in() -> None:
+    parser = _build_parser()
+
+    default_args = parser.parse_args(["/tmp/data", "--keyword", "Control"])
+    enabled_args = parser.parse_args(
+        [
+            "/tmp/data",
+            "--keyword",
+            "Control",
+            "--generate-measurement-summary",
+        ]
+    )
+    skipped_args = parser.parse_args(
+        [
+            "/tmp/data",
+            "--keyword",
+            "Control",
+            "--generate-measurement-summary",
+            "--skip-measurement-summary",
+        ]
+    )
+
+    assert default_args.generate_measurement_summary is False
+    assert default_args.skip_measurement_summary is False
+    assert enabled_args.generate_measurement_summary is True
+    assert skipped_args.generate_measurement_summary is True
+    assert skipped_args.skip_measurement_summary is True
+
+
+def test_cli_passes_measurement_summary_only_when_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_options = []
+
+    class FakeProcessor:
+        def __init__(self, fiji_path=None):
+            self.fiji_path = fiji_path
+
+        def process_documents(self, **kwargs):
+            captured_options.append(kwargs["options"])
+            return {"success": True, "processed_documents": [], "measurements": []}
+
+    monkeypatch.setattr(cli, "CoreProcessor", FakeProcessor)
+
+    monkeypatch.setattr(
+        "sys.argv",
+        ["main.py", "/tmp/data", "--keyword", "Control"],
+    )
+    assert cli_main() == 0
+    assert captured_options[-1].generate_measurement_summary is False
+
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "main.py",
+            "/tmp/data",
+            "--keyword",
+            "Control",
+            "--generate-measurement-summary",
+        ],
+    )
+    assert cli_main() == 0
+    assert captured_options[-1].generate_measurement_summary is True

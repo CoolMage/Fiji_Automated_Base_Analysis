@@ -36,3 +36,7 @@ Feel free to duplicate the folder and rename files to mirror your real-world
 experiments. Every option surfaced by `main.py --help` maps directly to a field
 in `ProcessingOptions` so you can experiment from the command line before
 embedding the processor in larger scripts.
+
+`run_sample_processing.py` is an editable example script in this folder. It
+uses the package imports from `fiji_automated_analysis` and can be copied as a
+starting point for project-specific automation.

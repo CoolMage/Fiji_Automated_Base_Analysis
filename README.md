@@ -19,7 +19,7 @@ Bio-Formats and Fiji plugins.
 
 ## Requirements
 
-- Python 3.7 or newer.
+- Python 3.10 or newer.
 - A local Fiji or ImageJ installation. Use Fiji unless you have a specific
   reason to use ImageJ.
 - Tkinter for the GUI. It is included with most Windows/macOS Python installs;
@@ -42,7 +42,7 @@ cannot find Fiji automatically, pass the executable path with `--fiji-path`.
 
 ### Windows
 
-1. Install Python 3.7+ and enable "Add python.exe to PATH" during setup.
+1. Install Python 3.10+ and enable "Add python.exe to PATH" during setup.
 2. Install or unzip Fiji, for example under `C:\Program Files\Fiji` or
    `C:\Fiji.app`.
 3. Double-click this file in Explorer:
@@ -84,7 +84,7 @@ python main.py --validate --fiji-path "C:\Fiji.app\ImageJ-win64.exe"
 
 ### macOS
 
-1. Install Python 3.7+.
+1. Install Python 3.10+.
 2. Copy `Fiji.app` to `/Applications` or `~/Applications`.
 3. Create a virtual environment and install dependencies:
 
@@ -113,7 +113,7 @@ For newer Fiji builds, the application also detects `fiji-macos-arm64` and
 
 ### Linux
 
-1. Install Python, venv, and Tkinter. On Debian/Ubuntu:
+1. Install Python 3.10+, venv, and Tkinter. On Debian/Ubuntu:
 
 ```bash
 sudo apt install python3 python3-venv python3-tk
@@ -229,12 +229,28 @@ image, runs `Measure`, closes images, and quits Fiji.
 | `--save-processed` | Create processed image output paths. |
 | `--save-measurements` | Create per-document measurement CSV paths. |
 | `--measurement-prefix` | Prefix for combined measurement summaries. |
-| `--skip-measurement-summary` | Disable the combined summary table. |
+| `--generate-measurement-summary` | Enable the combined summary table. Disabled by default. |
+| `--skip-measurement-summary` | Disable the combined summary table; kept for compatibility. |
 | `--fiji-path` | Explicit Fiji/ImageJ executable path. |
 | `--validate` | Validate the Fiji/ImageJ setup and exit. |
 | `--list-macros` | Print bundled macro names and exit. |
 
 Run `python main.py --help` for the complete option list.
+
+## Project Layout
+
+```text
+fiji_automated_analysis/   Main package: CLI, GUI, processor, config, utilities
+fiji_automated_analysis/macros_lib/
+                           Bundled Fiji macro templates and protocols
+scripts/                   Full shell and batch launchers
+examples/                  Sample data and example automation scripts
+tests/                     Pytest test suite
+```
+
+Root files such as `main.py`, `gui.py`, `run_gui.sh`, and `run_analysis.sh`
+are compatibility wrappers, so old commands still work while the implementation
+lives in the package.
 
 ## Input Layout
 

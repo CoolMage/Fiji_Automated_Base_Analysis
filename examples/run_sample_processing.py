@@ -9,10 +9,10 @@ from __future__ import annotations
 
 from pprint import pprint
 
-from config import FileConfig
-from core_processor import CoreProcessor, ProcessingOptions
+from fiji_automated_analysis.config import FileConfig
+from fiji_automated_analysis.core_processor import CoreProcessor, ProcessingOptions
 
-from examples.macros_lib import MACROS_LIB
+from fiji_automated_analysis.macros_lib import MACROS_LIB
 
 def build_processor() -> CoreProcessor:
     """Create a CoreProcessor with example file configuration overrides."""
