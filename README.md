@@ -339,6 +339,9 @@ Additional CLI options:
 
 - If Fiji is not found, run with `--fiji-path` and quote paths containing
   spaces.
+- On Windows, Fiji is often unpacked as `Fiji.app`. The executable is usually
+  `Fiji.app\ImageJ-win64.exe`; select that file manually or set `FIJI_PATH` to
+  its full path if auto-detection misses it.
 - If the GUI does not start on Linux, install `python3-tk`.
 - If directory selection is awkward on Linux, install `zenity` or `kdialog`.
 - If DeconvolutionLab2 is missing, install the plugin into the same Fiji copy

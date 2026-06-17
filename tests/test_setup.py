@@ -3,6 +3,7 @@
 import pytest
 
 import fiji_automated_analysis.cli as cli
+import fiji_automated_analysis.utils.general.fiji_utils as fiji_utils
 from fiji_automated_analysis.config import FijiConfig, FileConfig
 from fiji_automated_analysis.macros_lib import MACROS_LIB
 from fiji_automated_analysis.gui import (
@@ -39,6 +40,18 @@ def test_linux_search_paths_include_fiji_and_imagej(
     assert "/opt/fiji/ImageJ-linux64" in paths
     assert "/usr/bin/imagej" in paths
     assert paths.index("/opt/fiji/ImageJ-linux64") < paths.index("/usr/bin/imagej")
+
+
+def test_windows_search_paths_include_fiji_app(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("fiji_automated_analysis.config.platform.system", lambda: "Windows")
+
+    paths = FijiConfig.get_fiji_paths()
+
+    assert r"C:\Program Files\Fiji.app\ImageJ-win64.exe" in paths
+    assert any(r"\Downloads\Fiji.app\ImageJ-win64.exe" in path for path in paths)
+    assert any(r"\Documents\Fiji.app\ImageJ-win64.exe" in path for path in paths)
 
 
 def test_gui_scale_uses_environment_and_rejects_invalid_values(
@@ -120,6 +133,38 @@ def test_executable_discovery_falls_back_to_imagej(tmp_path) -> None:
     detected = find_fiji([str(imagej_path)])
 
     assert detected == str(imagej_path.resolve())
+
+
+def test_windows_executable_discovery_uses_fiji_path_env(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    fiji_path = tmp_path / "Fiji.app" / "ImageJ-win64.exe"
+    fiji_path.parent.mkdir()
+    fiji_path.write_bytes(b"fake exe")
+
+    monkeypatch.setenv("FIJI_PATH", str(fiji_path))
+    monkeypatch.setattr(fiji_utils.platform, "system", lambda: "Windows")
+
+    detected = find_fiji([])
+
+    assert detected == str(fiji_path.resolve())
+
+
+def test_windows_validation_accepts_existing_exe(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    fiji_path = tmp_path / "Fiji.app" / "ImageJ-win64.exe"
+    text_path = tmp_path / "Fiji.app" / "ImageJ.txt"
+    fiji_path.parent.mkdir()
+    fiji_path.write_bytes(b"fake exe")
+    text_path.write_text("not executable", encoding="utf-8")
+
+    monkeypatch.setattr(fiji_utils.platform, "system", lambda: "Windows")
+
+    assert fiji_utils.validate_fiji_path(str(fiji_path)) is True
+    assert fiji_utils.validate_fiji_path(str(text_path)) is False
 
 
 def test_complete_macro_template_expands_placeholders() -> None:

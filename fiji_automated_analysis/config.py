@@ -68,18 +68,38 @@ class FijiConfig:
 
         if system == "windows":
             return [
+                r"%FIJI_PATH%",
+                r"%IMAGEJ_PATH%",
+                r"%FIJI_EXECUTABLE%",
+                r"%IMAGEJ_EXECUTABLE%",
                 r"C:\Program Files\Fiji\ImageJ-win64.exe",
+                r"C:\Program Files\Fiji.app\ImageJ-win64.exe",
                 r"C:\Program Files (x86)\Fiji\ImageJ-win64.exe",
+                r"C:\Program Files (x86)\Fiji.app\ImageJ-win64.exe",
                 os.path.expanduser(r"~\Fiji\ImageJ-win64.exe"),
+                os.path.expanduser(r"~\Fiji.app\ImageJ-win64.exe"),
                 os.path.expanduser(r"~\Desktop\Fiji\ImageJ-win64.exe"),
+                os.path.expanduser(r"~\Desktop\Fiji.app\ImageJ-win64.exe"),
                 os.path.expanduser(r"~\Downloads\Fiji\ImageJ-win64.exe"),
+                os.path.expanduser(r"~\Downloads\Fiji.app\ImageJ-win64.exe"),
+                os.path.expanduser(r"~\Documents\Fiji\ImageJ-win64.exe"),
+                os.path.expanduser(r"~\Documents\Fiji.app\ImageJ-win64.exe"),
+                r"%LOCALAPPDATA%\Fiji\ImageJ-win64.exe",
+                r"%LOCALAPPDATA%\Fiji.app\ImageJ-win64.exe",
                 r"C:\Program Files\ImageJ\ImageJ.exe",
                 r"C:\Program Files\ImageJ\ImageJ-win64.exe",
                 r"C:\Program Files (x86)\ImageJ\ImageJ.exe",
+                r"C:\Program Files (x86)\ImageJ\ImageJ-win64.exe",
                 os.path.expanduser(r"~\ImageJ\ImageJ.exe"),
                 os.path.expanduser(r"~\ImageJ\ImageJ-win64.exe"),
                 os.path.expanduser(r"~\Desktop\ImageJ\ImageJ.exe"),
+                os.path.expanduser(r"~\Desktop\ImageJ\ImageJ-win64.exe"),
                 os.path.expanduser(r"~\Downloads\ImageJ\ImageJ.exe"),
+                os.path.expanduser(r"~\Downloads\ImageJ\ImageJ-win64.exe"),
+                os.path.expanduser(r"~\Documents\ImageJ\ImageJ.exe"),
+                os.path.expanduser(r"~\Documents\ImageJ\ImageJ-win64.exe"),
+                r"%LOCALAPPDATA%\ImageJ\ImageJ.exe",
+                r"%LOCALAPPDATA%\ImageJ\ImageJ-win64.exe",
             ]
 
         # Linux / other Unix-like
