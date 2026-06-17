@@ -11,6 +11,9 @@ from typing import Optional, List
 from fiji_automated_analysis.config import DEFAULT_FIJI_PATHS
 
 
+WINDOWS_EXECUTABLE_SUFFIXES = {".exe", ".bat", ".cmd"}
+
+
 def _macos_fiji_fallback_names() -> List[str]:
     """Return Fiji launcher names in preferred order for modern macOS installs."""
 
@@ -83,7 +86,7 @@ def _select_existing_executable(paths: List[str]) -> Optional[str]:
     for index, raw_path in enumerate(paths):
         if not raw_path:
             continue
-        path = str(Path(raw_path).expanduser())
+        path = str(Path(os.path.expandvars(raw_path)).expanduser())
         try:
             normalized_key = str(Path(path).resolve())
         except OSError:
@@ -92,7 +95,7 @@ def _select_existing_executable(paths: List[str]) -> Optional[str]:
             continue
         seen.add(normalized_key)
 
-        if os.path.isfile(path) and os.access(path, os.X_OK):
+        if _looks_executable_file(path):
             candidates.append((_candidate_priority(path, index), path))
 
     if not candidates:
@@ -100,6 +103,16 @@ def _select_existing_executable(paths: List[str]) -> Optional[str]:
 
     selected = min(candidates, key=lambda item: item[0])[1]
     return normalize_fiji_path(selected)
+
+
+def _looks_executable_file(path: str) -> bool:
+    """Return whether a path is a launchable executable for the current OS."""
+
+    if not os.path.isfile(path):
+        return False
+    if platform.system().lower() == "windows":
+        return Path(path).suffix.lower() in WINDOWS_EXECUTABLE_SUFFIXES
+    return os.access(path, os.X_OK)
 
 
 def _find_named_executables(roots: List[str], names: List[str]) -> List[str]:
@@ -126,6 +139,60 @@ def _find_named_executables(roots: List[str], names: List[str]) -> List[str]:
     except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError):
         return []
     return [line.strip() for line in result.splitlines() if line.strip()]
+
+
+def _windows_search_roots() -> List[str]:
+    """Return bounded Windows roots that commonly contain Fiji.app installs."""
+
+    raw_roots = [
+        os.environ.get("ProgramFiles"),
+        os.environ.get("ProgramFiles(x86)"),
+        os.environ.get("LOCALAPPDATA"),
+        os.path.expanduser(r"~\Desktop"),
+        os.path.expanduser(r"~\Downloads"),
+        os.path.expanduser(r"~\Documents"),
+        os.path.expanduser("~"),
+    ]
+    roots: list[str] = []
+    seen: set[str] = set()
+    for raw_root in raw_roots:
+        if not raw_root:
+            continue
+        root = os.path.abspath(os.path.expandvars(os.path.expanduser(raw_root)))
+        normalized = os.path.normcase(root)
+        if normalized in seen or not os.path.isdir(root):
+            continue
+        seen.add(normalized)
+        roots.append(root)
+    return roots
+
+
+def _find_windows_executables(roots: List[str]) -> List[str]:
+    """Find Windows executables with a bounded per-root recursive search."""
+
+    candidates: list[str] = []
+    patterns = ["ImageJ*.exe", "fiji*.exe"]
+    for root in roots:
+        if not os.path.isdir(root):
+            continue
+        for pattern in patterns:
+            try:
+                result = subprocess.check_output(
+                    ["where", "/R", root, pattern],
+                    text=True,
+                    timeout=10,
+                    stderr=subprocess.DEVNULL,
+                )
+            except (
+                subprocess.TimeoutExpired,
+                subprocess.CalledProcessError,
+                FileNotFoundError,
+            ):
+                continue
+            candidates.extend(
+                line.strip() for line in result.splitlines() if line.strip()
+            )
+    return candidates
 
 
 def _macos_launcher_arch(path: Path) -> Optional[str]:
@@ -223,7 +290,15 @@ def find_fiji(custom_paths: Optional[List[str]] = None) -> Optional[str]:
     Returns:
         Path to a Fiji or ImageJ executable if found, otherwise None
     """
-    search_paths = custom_paths if custom_paths is not None else DEFAULT_FIJI_PATHS
+    environment_paths = [
+        os.environ.get("FIJI_PATH"),
+        os.environ.get("IMAGEJ_PATH"),
+        os.environ.get("FIJI_EXECUTABLE"),
+        os.environ.get("IMAGEJ_EXECUTABLE"),
+    ]
+    search_paths = environment_paths + (
+        custom_paths if custom_paths is not None else DEFAULT_FIJI_PATHS
+    )
     selected = _select_existing_executable(search_paths)
     if selected:
         return selected
@@ -244,28 +319,9 @@ def find_fiji(custom_paths: Optional[List[str]] = None) -> Optional[str]:
             launcher_names,
         )
     elif system == "windows":
-        common_paths = [
-            r"C:\Program Files",
-            r"C:\Program Files (x86)",
-        ]
-        for base_path in common_paths:
-            for executable_name in ("fiji*.exe", "ImageJ*.exe"):
-                try:
-                    result = subprocess.check_output(
-                        ["where", "/R", base_path, executable_name],
-                        text=True,
-                        timeout=30,
-                        stderr=subprocess.DEVNULL,
-                    )
-                except (
-                    subprocess.TimeoutExpired,
-                    subprocess.CalledProcessError,
-                    FileNotFoundError,
-                ):
-                    continue
-                filesystem_candidates.extend(
-                    line.strip() for line in result.splitlines() if line.strip()
-                )
+        filesystem_candidates = _find_windows_executables(
+            _windows_search_roots()
+        )
     else:
         filesystem_candidates = _find_named_executables(
             ["/opt", "/usr/local", os.path.expanduser("~")],
@@ -304,7 +360,7 @@ def validate_fiji_path(fiji_path: str) -> bool:
     if file_stat.st_size <= 0:
         return False
 
-    if not os.access(fiji_path, os.X_OK):
+    if not _looks_executable_file(fiji_path):
         return False
 
     return True
