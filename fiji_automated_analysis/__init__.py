@@ -1,0 +1,1 @@
+"""Fiji automated analysis package."""

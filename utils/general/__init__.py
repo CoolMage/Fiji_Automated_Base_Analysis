@@ -1,9 +1,3 @@
-"""Shared utilities for the Fiji Automated Base Analysis toolkit."""
+"""Compatibility wrapper for legacy ``utils.general`` imports."""
 
-from .fiji_utils import find_fiji, validate_fiji_path, get_platform_info
-
-__all__ = [
-    "find_fiji",
-    "validate_fiji_path",
-    "get_platform_info",
-]
+from fiji_automated_analysis.utils.general import *  # noqa: F401,F403

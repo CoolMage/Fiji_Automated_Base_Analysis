@@ -1,8 +1,8 @@
 """Core processor tests that do not require launching Fiji."""
 
-from config import FileConfig
-from core_processor import CoreProcessor, DocumentInfo, ProcessingOptions
-from utils.general.macro_builder import MacroBuilder
+from fiji_automated_analysis.config import FileConfig
+from fiji_automated_analysis.core_processor import CoreProcessor, DocumentInfo, ProcessingOptions
+from fiji_automated_analysis.utils.general.macro_builder import MacroBuilder
 
 
 def test_core_types_import() -> None:
@@ -15,6 +15,7 @@ def test_core_types_import() -> None:
     )
 
     assert options.custom_suffix == "processed"
+    assert options.generate_measurement_summary is False
     assert document.matched_keyword == "image"
 
 
@@ -38,7 +39,7 @@ def test_complete_macro_code_is_formatted_and_executed(
         captured["macro_code"] = macro_code
         return {"success": True, "measurements": {}, "error": None}
 
-    monkeypatch.setattr("core_processor.run_fiji_macro", fake_run_fiji_macro)
+    monkeypatch.setattr("fiji_automated_analysis.core_processor.run_fiji_macro", fake_run_fiji_macro)
 
     processor = CoreProcessor.__new__(CoreProcessor)
     processor.fiji_path = "/fake/fiji"

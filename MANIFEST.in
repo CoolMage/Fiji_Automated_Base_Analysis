@@ -4,6 +4,7 @@ include requirements.txt
 include MANIFEST.in
 recursive-include examples *
 recursive-include tests *
+recursive-include fiji_automated_analysis/macros_lib *.ijm *.md
 global-exclude *.pyc
 global-exclude __pycache__
 global-exclude .git*

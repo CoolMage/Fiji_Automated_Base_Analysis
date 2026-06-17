@@ -3,7 +3,6 @@ Setup script for Fiji Automated Analysis Tool
 """
 
 from setuptools import setup, find_packages
-import os
 
 # Read the README file
 def read_readme():
@@ -25,15 +24,16 @@ setup(
     long_description_content_type="text/markdown",
     url="https://github.com/yourusername/fiji-automated-analysis",
     packages=find_packages(),
+    include_package_data=True,
+    package_data={
+        "fiji_automated_analysis.macros_lib": ["*.ijm", "*.md"],
+    },
     classifiers=[
         "Development Status :: 4 - Beta",
         "Intended Audience :: Science/Research",
         "Topic :: Scientific/Engineering :: Image Processing",
         "License :: OSI Approved :: MIT License",
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.7",
-        "Programming Language :: Python :: 3.8",
-        "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
         "Operating System :: OS Independent",
@@ -41,7 +41,7 @@ setup(
         "Operating System :: MacOS",
         "Operating System :: POSIX :: Linux",
     ],
-    python_requires=">=3.7",
+    python_requires=">=3.10",
     install_requires=read_requirements(),
     extras_require={
         "dev": [
@@ -58,7 +58,7 @@ setup(
     },
     entry_points={
         "console_scripts": [
-            "fiji-document-processor=main:main",
+            "fiji-document-processor=fiji_automated_analysis.cli:main",
         ],
     },
     keywords="fiji imagej image processing automation cross-platform bioimaging",

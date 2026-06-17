@@ -37,10 +37,16 @@ if %ERRORLEVEL%==0 (
 )
 
 echo Error: Python is not installed or not in PATH.
-echo Install Python 3.7 or newer and enable "Add python.exe to PATH".
+echo Install Python 3.10 or newer and enable "Add python.exe to PATH".
 goto fail
 
 :system_python_found
+"%SYSTEM_PYTHON_EXE%" %SYSTEM_PYTHON_ARGS% -c "import sys; raise SystemExit(sys.version_info < (3, 10))"
+if %ERRORLEVEL% neq 0 (
+    echo Error: Python 3.10 or newer is required.
+    goto fail
+)
+
 echo Creating local Python environment...
 "%SYSTEM_PYTHON_EXE%" %SYSTEM_PYTHON_ARGS% -m venv "%VENV_DIR%"
 if %ERRORLEVEL% neq 0 (
@@ -51,6 +57,13 @@ if %ERRORLEVEL% neq 0 (
 set "PYTHON_EXE=%VENV_DIR%\Scripts\python.exe"
 
 :venv_ready
+"%PYTHON_EXE%" -c "import sys; raise SystemExit(sys.version_info < (3, 10))"
+if %ERRORLEVEL% neq 0 (
+    echo Error: Python 3.10 or newer is required.
+    echo Delete .venv and rerun this launcher after installing a newer Python.
+    goto fail
+)
+
 echo Installing Python dependencies...
 "%PYTHON_EXE%" -m pip install --upgrade pip
 if %ERRORLEVEL% neq 0 (
