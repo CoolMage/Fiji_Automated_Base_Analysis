@@ -5,13 +5,15 @@ import stat
 import subprocess
 import platform
 import shutil
+import fnmatch
 from pathlib import Path
-from typing import Optional, List
+from typing import Iterable, Optional, List
 
 from fiji_automated_analysis.config import DEFAULT_FIJI_PATHS
 
 
 WINDOWS_EXECUTABLE_SUFFIXES = {".exe", ".bat", ".cmd"}
+UNIX_SEARCH_MAX_DEPTH = 6
 
 
 def _macos_fiji_fallback_names() -> List[str]:
@@ -35,6 +37,8 @@ def _platform_launcher_names(system: str) -> List[str]:
         ]
     if system == "windows":
         return [
+            "fiji-win64.exe",
+            "fiji-win32.exe",
             "fiji.exe",
             "ImageJ-win64.exe",
             "ImageJ-win32.exe",
@@ -42,13 +46,91 @@ def _platform_launcher_names(system: str) -> List[str]:
             "imagej.exe",
         ]
     return [
+        "fiji-linux64",
+        "fiji-linux32",
+        "fiji-linux",
         "fiji",
         "ImageJ-linux64",
         "ImageJ-linux32",
+        "ImageJ-linux",
         "imagej",
         "ImageJ",
         "imagej1",
     ]
+
+
+def _platform_launcher_globs(system: str) -> List[str]:
+    """Return bounded filename globs for versioned launchers such as AppImages."""
+
+    if system == "windows":
+        return ["Fiji*.exe", "fiji*.exe", "ImageJ*.exe", "imagej*.exe"]
+    if system == "darwin":
+        return []
+    return [
+        "Fiji*.AppImage",
+        "fiji*.AppImage",
+        "ImageJ*.AppImage",
+        "imagej*.AppImage",
+        "Fiji*.appimage",
+        "fiji*.appimage",
+        "ImageJ*.appimage",
+        "imagej*.appimage",
+    ]
+
+
+def _launcher_relative_paths(system: str) -> List[Path]:
+    """Return launcher locations relative to an installation or parent directory."""
+
+    names = _platform_launcher_names(system)
+    relative_paths: list[Path] = [Path(name) for name in names]
+
+    if system == "darwin":
+        relative_paths.extend(
+            [
+                Path("Contents") / "MacOS" / name
+                for name in _macos_fiji_fallback_names()
+            ]
+        )
+        relative_paths.extend(
+            [
+                Path("Fiji.app") / "Contents" / "MacOS" / name
+                for name in _macos_fiji_fallback_names()
+            ]
+        )
+        relative_paths.extend(
+            [
+                Path("Fiji.app") / "Fiji.app" / "Contents" / "MacOS" / name
+                for name in _macos_fiji_fallback_names()
+            ]
+        )
+        relative_paths.extend(
+            [
+                Path("ImageJ.app") / "Contents" / "MacOS" / name
+                for name in ("ImageJ", "ImageJ-macosx", "JavaApplicationStub")
+            ]
+        )
+    elif system == "windows":
+        relative_paths.extend(Path("Fiji.app") / name for name in names)
+        relative_paths.extend(Path("Fiji") / name for name in names)
+        relative_paths.extend(Path("ImageJ") / name for name in names)
+    else:
+        relative_paths.extend(Path("Fiji.app") / name for name in names)
+        relative_paths.extend(Path("fiji") / name for name in names)
+        relative_paths.extend(Path("ImageJ") / name for name in names)
+        relative_paths.extend(Path("imagej") / name for name in names)
+
+    unique_paths: list[Path] = []
+    seen: set[str] = set()
+    for relative_path in relative_paths:
+        key = (
+            relative_path.as_posix().lower()
+            if system == "windows"
+            else relative_path.as_posix()
+        )
+        if key not in seen:
+            seen.add(key)
+            unique_paths.append(relative_path)
+    return unique_paths
 
 
 def _candidate_priority(path: str, original_index: int) -> tuple[int, int]:
@@ -66,10 +148,16 @@ def _candidate_priority(path: str, original_index: int) -> tuple[int, int]:
     fiji_launcher_names = {
         "fiji",
         "fiji.exe",
+        "fiji-win64.exe",
+        "fiji-win32.exe",
+        "fiji-linux64",
+        "fiji-linux32",
+        "fiji-linux",
         "fiji-macos-arm64",
         "fiji-macos-x64",
         "imagej-linux64",
         "imagej-linux32",
+        "imagej-linux",
         "imagej-win64.exe",
         "imagej-win32.exe",
     }
@@ -78,8 +166,21 @@ def _candidate_priority(path: str, original_index: int) -> tuple[int, int]:
     return (2, original_index)
 
 
-def _select_existing_executable(paths: List[str]) -> Optional[str]:
-    """Choose an executable candidate while preserving Fiji preference."""
+def _path_key(path: str) -> str:
+    """Return a stable key for deduplicating candidate paths."""
+
+    candidate = Path(path).expanduser()
+    try:
+        resolved = str(candidate.resolve())
+    except OSError:
+        resolved = os.path.abspath(str(candidate))
+    if platform.system().lower() == "windows":
+        return os.path.normcase(resolved)
+    return resolved
+
+
+def _select_executable_file(paths: Iterable[str]) -> Optional[str]:
+    """Choose an executable file candidate while preserving Fiji preference."""
 
     candidates: list[tuple[tuple[int, int], str]] = []
     seen: set[str] = set()
@@ -87,10 +188,7 @@ def _select_existing_executable(paths: List[str]) -> Optional[str]:
         if not raw_path:
             continue
         path = str(Path(os.path.expandvars(raw_path)).expanduser())
-        try:
-            normalized_key = str(Path(path).resolve())
-        except OSError:
-            normalized_key = path
+        normalized_key = _path_key(path)
         if normalized_key in seen:
             continue
         seen.add(normalized_key)
@@ -101,8 +199,64 @@ def _select_existing_executable(paths: List[str]) -> Optional[str]:
     if not candidates:
         return None
 
-    selected = min(candidates, key=lambda item: item[0])[1]
-    return normalize_fiji_path(selected)
+    return min(candidates, key=lambda item: item[0])[1]
+
+
+def _directory_launcher_candidates(directory: Path, system: str) -> List[str]:
+    """Return launcher candidates under a known installation or parent directory."""
+
+    candidates: list[str] = [
+        str(directory / relative_path)
+        for relative_path in _launcher_relative_paths(system)
+    ]
+
+    for pattern in _platform_launcher_globs(system):
+        try:
+            candidates.extend(str(path) for path in directory.glob(pattern))
+        except OSError:
+            continue
+
+    return candidates
+
+
+def _resolve_launcher_from_path(raw_path: str) -> Optional[str]:
+    """Resolve either an executable path or an installation directory to a launcher."""
+
+    if not raw_path:
+        return None
+
+    system = platform.system().lower()
+    expanded_path = os.path.expandvars(raw_path)
+    path = Path(expanded_path).expanduser()
+
+    if any(char in str(path) for char in "*?[]"):
+        parent = path.parent
+        try:
+            matches = [str(candidate) for candidate in parent.glob(path.name)]
+        except OSError:
+            matches = []
+        return _select_executable_file(matches)
+
+    if path.is_file():
+        return str(path) if _looks_executable_file(str(path)) else None
+
+    if not path.is_dir():
+        return None
+
+    return _select_executable_file(_directory_launcher_candidates(path, system))
+
+
+def _select_existing_executable(paths: Iterable[str]) -> Optional[str]:
+    """Choose an executable candidate while accepting files or install roots."""
+
+    candidates: list[str] = []
+    for raw_path in paths:
+        selected = _resolve_launcher_from_path(raw_path)
+        if selected:
+            candidates.append(selected)
+
+    selected = _select_executable_file(candidates)
+    return normalize_fiji_path(selected) if selected else None
 
 
 def _looks_executable_file(path: str) -> bool:
@@ -115,30 +269,106 @@ def _looks_executable_file(path: str) -> bool:
     return os.access(path, os.X_OK)
 
 
-def _find_named_executables(roots: List[str], names: List[str]) -> List[str]:
-    """Find matching executable files under Unix roots in one bounded search."""
+def _find_named_executables(
+    roots: List[str],
+    names: List[str],
+    patterns: Optional[List[str]] = None,
+    max_depth: int = UNIX_SEARCH_MAX_DEPTH,
+) -> List[str]:
+    """Find matching executable files under Unix roots with a bounded walk."""
 
     existing_roots = [root for root in roots if os.path.isdir(root)]
     if not existing_roots:
         return []
 
-    name_expression: list[str] = ["("]
-    for index, name in enumerate(names):
-        if index:
-            name_expression.append("-o")
-        name_expression.extend(["-name", name])
-    name_expression.append(")")
+    matches: list[str] = []
+    seen: set[str] = set()
+    name_set = set(names)
+    glob_patterns = patterns or []
+    pruned_dirs = {
+        ".cache",
+        ".conda",
+        ".git",
+        ".hg",
+        ".npm",
+        ".venv",
+        "__pycache__",
+        "node_modules",
+        "site-packages",
+    }
 
-    try:
-        result = subprocess.check_output(
-            ["find", *existing_roots, "-type", "f", *name_expression],
-            text=True,
-            timeout=30,
-            stderr=subprocess.DEVNULL,
-        )
-    except (subprocess.TimeoutExpired, subprocess.CalledProcessError, FileNotFoundError):
-        return []
-    return [line.strip() for line in result.splitlines() if line.strip()]
+    for raw_root in existing_roots:
+        root = Path(raw_root)
+        try:
+            root = root.resolve()
+        except OSError:
+            continue
+
+        for current_root, dirs, files in os.walk(root):
+            current_path = Path(current_root)
+            try:
+                depth = len(current_path.relative_to(root).parts)
+            except ValueError:
+                depth = max_depth
+
+            if depth >= max_depth:
+                dirs[:] = []
+            else:
+                dirs[:] = [
+                    name
+                    for name in dirs
+                    if name not in pruned_dirs and not name.endswith(".egg-info")
+                ]
+
+            for filename in files:
+                if filename not in name_set and not any(
+                    fnmatch.fnmatchcase(filename, pattern) for pattern in glob_patterns
+                ):
+                    continue
+
+                candidate = str(current_path / filename)
+                key = _path_key(candidate)
+                if key in seen or not _looks_executable_file(candidate):
+                    continue
+                seen.add(key)
+                matches.append(candidate)
+
+    return matches
+
+
+def _macos_search_roots() -> List[str]:
+    """Return macOS locations that commonly contain Fiji or ImageJ apps."""
+
+    return [
+        "/Applications",
+        os.path.expanduser("~/Applications"),
+        os.path.expanduser("~/Downloads"),
+        os.path.expanduser("~/Desktop"),
+    ]
+
+
+def _linux_search_roots() -> List[str]:
+    """Return bounded Linux roots that commonly contain Fiji/ImageJ installs."""
+
+    return [
+        "/opt",
+        "/usr/local",
+        "/usr/lib",
+        "/usr/bin",
+        "/snap/bin",
+        "/var/lib/flatpak/exports/bin",
+        os.path.expanduser("~/.local/bin"),
+        os.path.expanduser("~/.local/share/flatpak/exports/bin"),
+        os.path.expanduser("~/Applications"),
+        os.path.expanduser("~/Fiji.app"),
+        os.path.expanduser("~/fiji"),
+        os.path.expanduser("~/ImageJ"),
+        os.path.expanduser("~/imagej"),
+        os.path.expanduser("~/Downloads"),
+        os.path.expanduser("~/Desktop"),
+        os.path.expanduser("~/opt"),
+        os.path.expanduser("~/apps"),
+    ]
 
 
 def _windows_search_roots() -> List[str]:
@@ -263,7 +493,8 @@ def normalize_fiji_path(fiji_path: str) -> str:
     if not fiji_path:
         return fiji_path
 
-    path = Path(fiji_path).expanduser()
+    launcher = _resolve_launcher_from_path(fiji_path)
+    path = Path(launcher or os.path.expandvars(fiji_path)).expanduser()
     try:
         resolved = path.resolve()
     except OSError:
@@ -314,18 +545,37 @@ def find_fiji(custom_paths: Optional[List[str]] = None) -> Optional[str]:
 
     filesystem_candidates: List[str] = []
     if system == "darwin":
-        filesystem_candidates = _find_named_executables(
-            ["/Applications", os.path.expanduser("~/Applications")],
-            launcher_names,
+        explicit_root_candidates = _select_existing_executable(_macos_search_roots())
+        if explicit_root_candidates:
+            filesystem_candidates.append(explicit_root_candidates)
+        filesystem_candidates.extend(
+            _find_named_executables(
+                _macos_search_roots(),
+                launcher_names,
+                _platform_launcher_globs(system),
+            )
         )
     elif system == "windows":
-        filesystem_candidates = _find_windows_executables(
+        explicit_root_candidates = _select_existing_executable(
             _windows_search_roots()
         )
+        if explicit_root_candidates:
+            filesystem_candidates.append(explicit_root_candidates)
+        filesystem_candidates.extend(
+            _find_windows_executables(
+                _windows_search_roots()
+            )
+        )
     else:
-        filesystem_candidates = _find_named_executables(
-            ["/opt", "/usr/local", os.path.expanduser("~")],
-            launcher_names,
+        explicit_root_candidates = _select_existing_executable(_linux_search_roots())
+        if explicit_root_candidates:
+            filesystem_candidates.append(explicit_root_candidates)
+        filesystem_candidates.extend(
+            _find_named_executables(
+                _linux_search_roots(),
+                launcher_names,
+                _platform_launcher_globs(system),
+            )
         )
 
     return _select_existing_executable(path_candidates + filesystem_candidates)
@@ -371,13 +621,31 @@ def _resolve_fiji_root(fiji_path: str) -> Optional[Path]:
     if not fiji_path:
         return None
 
-    path = Path(fiji_path).resolve()
+    original_path = Path(os.path.expandvars(fiji_path)).expanduser()
+    try:
+        original_resolved = original_path.resolve()
+    except OSError:
+        original_resolved = original_path
+
+    if original_resolved.is_dir() and (
+        original_resolved.name.lower() == "fiji.app"
+        or (original_resolved / "plugins").exists()
+        or (original_resolved / "jars").exists()
+    ):
+        return original_resolved
+
+    launcher = _resolve_launcher_from_path(fiji_path)
+    path = Path(launcher or os.path.expandvars(fiji_path)).expanduser()
+    try:
+        path = path.resolve()
+    except OSError:
+        pass
     parts = [part.lower() for part in path.parts]
     if "fiji.app" in parts:
         idx = parts.index("fiji.app")
         return Path(*path.parts[: idx + 1])
 
-    return path.parent
+    return path.parent if path.is_file() else path
 
 
 def detect_ffmpeg_plugin(fiji_path: str) -> bool:

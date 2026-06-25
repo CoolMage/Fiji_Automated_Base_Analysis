@@ -59,7 +59,11 @@ def test_linux_search_paths_include_fiji_and_imagej(
 
     paths = FijiConfig.get_fiji_paths()
 
+    assert "/opt/Fiji.app/ImageJ-linux64" in paths
     assert "/opt/fiji/ImageJ-linux64" in paths
+    assert "/usr/local/bin/fiji" in paths
+    assert any(path.endswith("Downloads/Fiji.app/ImageJ-linux64") for path in paths)
+    assert any(path.endswith("Downloads/Fiji*.AppImage") for path in paths)
     assert "/usr/bin/imagej" in paths
     assert paths.index("/opt/fiji/ImageJ-linux64") < paths.index("/usr/bin/imagej")
 
@@ -151,6 +155,82 @@ def test_executable_discovery_prefers_fiji_over_imagej(tmp_path) -> None:
     fiji_path.chmod(0o755)
 
     detected = find_fiji([str(imagej_path), str(fiji_path)])
+
+    assert detected == str(fiji_path.resolve())
+
+
+def test_linux_fiji_directory_resolves_to_launcher(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    fiji_root = tmp_path / "Fiji.app"
+    fiji_path = fiji_root / "ImageJ-linux64"
+    fiji_root.mkdir()
+    fiji_path.write_text("#!/bin/sh\n", encoding="utf-8")
+    fiji_path.chmod(0o755)
+
+    monkeypatch.setattr(fiji_utils.platform, "system", lambda: "Linux")
+
+    assert fiji_utils.normalize_fiji_path(str(fiji_root)) == str(fiji_path.resolve())
+    assert fiji_utils.validate_fiji_path(str(fiji_root)) is True
+
+
+def test_linux_parent_directory_can_discover_nested_fiji_app(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    fiji_root = tmp_path / "Fiji.app"
+    fiji_path = fiji_root / "fiji-linux64"
+    fiji_root.mkdir()
+    fiji_path.write_text("#!/bin/sh\n", encoding="utf-8")
+    fiji_path.chmod(0o755)
+
+    monkeypatch.setattr(fiji_utils.platform, "system", lambda: "Linux")
+
+    detected = find_fiji([str(tmp_path)])
+
+    assert detected == str(fiji_path.resolve())
+
+
+def test_linux_appimage_glob_is_supported(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    appimage_path = tmp_path / "Downloads" / "Fiji-linux64.AppImage"
+    appimage_path.parent.mkdir()
+    appimage_path.write_text("#!/bin/sh\n", encoding="utf-8")
+    appimage_path.chmod(0o755)
+
+    monkeypatch.setattr(fiji_utils.platform, "system", lambda: "Linux")
+
+    detected = find_fiji([str(appimage_path.parent / "Fiji*.AppImage")])
+
+    assert detected == str(appimage_path.resolve())
+
+
+def test_linux_filesystem_search_checks_common_roots(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    fiji_root = tmp_path / "apps" / "Fiji.app"
+    fiji_path = fiji_root / "ImageJ-linux64"
+    fiji_root.mkdir(parents=True)
+    fiji_path.write_text("#!/bin/sh\n", encoding="utf-8")
+    fiji_path.chmod(0o755)
+
+    for variable in (
+        "FIJI_PATH",
+        "IMAGEJ_PATH",
+        "FIJI_EXECUTABLE",
+        "IMAGEJ_EXECUTABLE",
+    ):
+        monkeypatch.delenv(variable, raising=False)
+    monkeypatch.setattr(fiji_utils.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(fiji_utils, "DEFAULT_FIJI_PATHS", [])
+    monkeypatch.setattr(fiji_utils, "_linux_search_roots", lambda: [str(tmp_path)])
+    monkeypatch.setattr(fiji_utils.shutil, "which", lambda _name: None)
+
+    detected = find_fiji([])
 
     assert detected == str(fiji_path.resolve())
 

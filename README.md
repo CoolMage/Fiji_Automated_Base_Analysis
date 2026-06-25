@@ -119,8 +119,9 @@ For newer Fiji builds, the application also detects `fiji-macos-arm64` and
 sudo apt install python3 python3-venv python3-tk
 ```
 
-2. Install Fiji under a location such as `/opt/fiji`, `~/Fiji.app`, or another
-   directory you can pass through `--fiji-path`.
+2. Install Fiji under a location such as `/opt/Fiji.app`, `/opt/fiji`,
+   `~/Fiji.app`, `~/Downloads/Fiji.app`, or another directory you can pass
+   through `--fiji-path`.
 3. Create a virtual environment and install dependencies:
 
 ```bash
@@ -141,6 +142,12 @@ Validate Fiji manually if needed:
 
 ```bash
 python main.py --validate --fiji-path ~/Fiji.app/ImageJ-linux64
+```
+
+You can also pass the Fiji installation directory itself:
+
+```bash
+python main.py --validate --fiji-path ~/Fiji.app
 ```
 
 On Linux, directory selection uses `zenity` or `kdialog` when available and
