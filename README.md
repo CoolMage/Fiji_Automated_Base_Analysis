@@ -85,7 +85,8 @@ python main.py --validate --fiji-path "C:\Fiji.app\ImageJ-win64.exe"
 ### macOS
 
 1. Install Python 3.10+.
-2. Copy `Fiji.app` to `/Applications` or `~/Applications`.
+2. Copy `Fiji.app` to `/Applications`, `~/Applications`, `~/Documents`, or a
+   parent/sibling folder near this project.
 3. Create a virtual environment and install dependencies:
 
 ```bash
@@ -120,8 +121,8 @@ sudo apt install python3 python3-venv python3-tk
 ```
 
 2. Install Fiji under a location such as `/opt/Fiji.app`, `/opt/fiji`,
-   `~/Fiji.app`, `~/Downloads/Fiji.app`, or another directory you can pass
-   through `--fiji-path`.
+   `~/Fiji.app`, `~/Documents/Fiji.app`, `~/Downloads/Fiji.app`, or a
+   parent/sibling folder near this project.
 3. Create a virtual environment and install dependencies:
 
 ```bash
@@ -149,6 +150,10 @@ You can also pass the Fiji installation directory itself:
 ```bash
 python main.py --validate --fiji-path ~/Fiji.app
 ```
+
+Automatic detection also checks parent directories of the project folder, so a
+layout such as `~/Documents/Fiji.app` and
+`~/Documents/Git_rep/Fiji_Automated_Base_Analysis` is supported.
 
 On Linux, directory selection uses `zenity` or `kdialog` when available and
 falls back to Tk's built-in file picker.

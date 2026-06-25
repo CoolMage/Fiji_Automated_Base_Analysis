@@ -32,6 +32,16 @@ class FijiConfig:
                     "~/Applications/Fiji.app/Contents/MacOS/ImageJ-macosx"
                 ),
                 os.path.expanduser(
+                    "~/Documents/Fiji.app/Fiji.app/Contents/MacOS/fiji-macos-arm64"
+                ),
+                os.path.expanduser(
+                    "~/Documents/Fiji.app/Fiji.app/Contents/MacOS/fiji-macos-x64"
+                ),
+                os.path.expanduser("~/Documents/Fiji.app/fiji"),
+                os.path.expanduser(
+                    "~/Documents/Fiji.app/Contents/MacOS/ImageJ-macosx"
+                ),
+                os.path.expanduser(
                     "~/Downloads/Fiji.app/Fiji.app/Contents/MacOS/fiji-macos-arm64"
                 ),
                 os.path.expanduser(
@@ -126,6 +136,9 @@ class FijiConfig:
             os.path.expanduser("~/Applications/Fiji.app/ImageJ-linux64"),
             os.path.expanduser("~/Applications/Fiji.app/fiji-linux64"),
             os.path.expanduser("~/Applications/Fiji.app/fiji"),
+            os.path.expanduser("~/Documents/Fiji.app/ImageJ-linux64"),
+            os.path.expanduser("~/Documents/Fiji.app/fiji-linux64"),
+            os.path.expanduser("~/Documents/Fiji.app/fiji"),
             os.path.expanduser("~/Desktop/fiji/ImageJ-linux64"),
             os.path.expanduser("~/Desktop/Fiji.app/ImageJ-linux64"),
             os.path.expanduser("~/Desktop/Fiji.app/fiji-linux64"),

@@ -336,39 +336,122 @@ def _find_named_executables(
     return matches
 
 
+def _dedupe_search_roots(roots: Iterable[str]) -> List[str]:
+    """Deduplicate search roots while preserving priority order."""
+
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for raw_root in roots:
+        if not raw_root:
+            continue
+
+        root = Path(os.path.expandvars(raw_root)).expanduser()
+        try:
+            key = str(root.resolve())
+        except OSError:
+            key = os.path.abspath(str(root))
+
+        if platform.system().lower() == "windows":
+            key = os.path.normcase(key)
+
+        if key in seen:
+            continue
+
+        seen.add(key)
+        deduped.append(str(root))
+    return deduped
+
+
+def _xdg_user_dir(name: str) -> Optional[str]:
+    """Return an XDG user directory path such as DOCUMENTS when configured."""
+
+    config_path = Path.home() / ".config" / "user-dirs.dirs"
+    try:
+        lines = config_path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None
+
+    key = f"XDG_{name}_DIR="
+    for line in lines:
+        stripped = line.strip()
+        if not stripped.startswith(key):
+            continue
+
+        value = stripped[len(key):].strip().strip('"')
+        if not value:
+            return None
+        return value.replace("$HOME", str(Path.home()))
+    return None
+
+
+def _contextual_search_roots() -> List[str]:
+    """Return cwd ancestors so sibling installs near the project are found."""
+
+    try:
+        cwd = Path.cwd().resolve()
+    except OSError:
+        cwd = Path.cwd()
+
+    try:
+        home = Path.home().resolve()
+    except OSError:
+        home = Path.home()
+
+    roots: list[str] = []
+    for path in (cwd, *cwd.parents):
+        if path == home:
+            break
+        roots.append(str(path))
+        if path.parent == path:
+            break
+
+    return _dedupe_search_roots(roots)
+
+
+def _common_user_search_roots() -> List[str]:
+    """Return user-space roots shared by macOS and Linux discovery."""
+
+    documents_dir = _xdg_user_dir("DOCUMENTS")
+    return _dedupe_search_roots(
+        [
+            os.path.expanduser("~/Applications"),
+            os.path.expanduser("~/Documents"),
+            documents_dir or "",
+            os.path.expanduser("~/Downloads"),
+            os.path.expanduser("~/Desktop"),
+            *_contextual_search_roots(),
+        ]
+    )
+
+
 def _macos_search_roots() -> List[str]:
     """Return macOS locations that commonly contain Fiji or ImageJ apps."""
 
-    return [
-        "/Applications",
-        os.path.expanduser("~/Applications"),
-        os.path.expanduser("~/Downloads"),
-        os.path.expanduser("~/Desktop"),
-    ]
+    return _dedupe_search_roots(["/Applications", *_common_user_search_roots()])
 
 
 def _linux_search_roots() -> List[str]:
     """Return bounded Linux roots that commonly contain Fiji/ImageJ installs."""
 
-    return [
-        "/opt",
-        "/usr/local",
-        "/usr/lib",
-        "/usr/bin",
-        "/snap/bin",
-        "/var/lib/flatpak/exports/bin",
-        os.path.expanduser("~/.local/bin"),
-        os.path.expanduser("~/.local/share/flatpak/exports/bin"),
-        os.path.expanduser("~/Applications"),
-        os.path.expanduser("~/Fiji.app"),
-        os.path.expanduser("~/fiji"),
-        os.path.expanduser("~/ImageJ"),
-        os.path.expanduser("~/imagej"),
-        os.path.expanduser("~/Downloads"),
-        os.path.expanduser("~/Desktop"),
-        os.path.expanduser("~/opt"),
-        os.path.expanduser("~/apps"),
-    ]
+    return _dedupe_search_roots(
+        [
+            "/opt",
+            "/usr/local",
+            "/usr/lib",
+            "/usr/bin",
+            "/snap/bin",
+            "/var/lib/flatpak/exports/bin",
+            os.path.expanduser("~/.local/bin"),
+            os.path.expanduser("~/.local/share/flatpak/exports/bin"),
+            *_common_user_search_roots(),
+            os.path.expanduser("~/Fiji.app"),
+            os.path.expanduser("~/fiji"),
+            os.path.expanduser("~/ImageJ"),
+            os.path.expanduser("~/imagej"),
+            os.path.expanduser("~/opt"),
+            os.path.expanduser("~/apps"),
+        ]
+    )
 
 
 def _windows_search_roots() -> List[str]:

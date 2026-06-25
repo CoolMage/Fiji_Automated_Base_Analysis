@@ -62,6 +62,7 @@ def test_linux_search_paths_include_fiji_and_imagej(
     assert "/opt/Fiji.app/ImageJ-linux64" in paths
     assert "/opt/fiji/ImageJ-linux64" in paths
     assert "/usr/local/bin/fiji" in paths
+    assert any(path.endswith("Documents/Fiji.app/ImageJ-linux64") for path in paths)
     assert any(path.endswith("Downloads/Fiji.app/ImageJ-linux64") for path in paths)
     assert any(path.endswith("Downloads/Fiji*.AppImage") for path in paths)
     assert "/usr/bin/imagej" in paths
@@ -228,6 +229,76 @@ def test_linux_filesystem_search_checks_common_roots(
     monkeypatch.setattr(fiji_utils.platform, "system", lambda: "Linux")
     monkeypatch.setattr(fiji_utils, "DEFAULT_FIJI_PATHS", [])
     monkeypatch.setattr(fiji_utils, "_linux_search_roots", lambda: [str(tmp_path)])
+    monkeypatch.setattr(fiji_utils.shutil, "which", lambda _name: None)
+
+    detected = find_fiji([])
+
+    assert detected == str(fiji_path.resolve())
+
+
+def test_linux_contextual_search_finds_fiji_next_to_project_parent(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    documents_dir = tmp_path / "Documents"
+    project_dir = documents_dir / "Git_rep" / "Fiji_Automated_Base_Analysis"
+    fiji_root = documents_dir / "Fiji.app"
+    fiji_path = fiji_root / "ImageJ-linux64"
+    project_dir.mkdir(parents=True)
+    fiji_root.mkdir()
+    fiji_path.write_text("#!/bin/sh\n", encoding="utf-8")
+    fiji_path.chmod(0o755)
+
+    for variable in (
+        "FIJI_PATH",
+        "IMAGEJ_PATH",
+        "FIJI_EXECUTABLE",
+        "IMAGEJ_EXECUTABLE",
+    ):
+        monkeypatch.delenv(variable, raising=False)
+    monkeypatch.chdir(project_dir)
+    monkeypatch.setattr(fiji_utils.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(fiji_utils, "DEFAULT_FIJI_PATHS", [])
+    monkeypatch.setattr(
+        fiji_utils,
+        "_linux_search_roots",
+        fiji_utils._contextual_search_roots,
+    )
+    monkeypatch.setattr(fiji_utils.shutil, "which", lambda _name: None)
+
+    detected = find_fiji([])
+
+    assert detected == str(fiji_path.resolve())
+
+
+def test_macos_contextual_search_finds_fiji_next_to_project_parent(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    documents_dir = tmp_path / "Documents"
+    project_dir = documents_dir / "Git_rep" / "Fiji_Automated_Base_Analysis"
+    fiji_root = documents_dir / "Fiji.app"
+    fiji_path = fiji_root / "Fiji.app" / "Contents" / "MacOS" / "fiji-macos-x64"
+    project_dir.mkdir(parents=True)
+    fiji_path.parent.mkdir(parents=True)
+    fiji_path.write_text("#!/bin/sh\n", encoding="utf-8")
+    fiji_path.chmod(0o755)
+
+    for variable in (
+        "FIJI_PATH",
+        "IMAGEJ_PATH",
+        "FIJI_EXECUTABLE",
+        "IMAGEJ_EXECUTABLE",
+    ):
+        monkeypatch.delenv(variable, raising=False)
+    monkeypatch.chdir(project_dir)
+    monkeypatch.setattr(fiji_utils.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(fiji_utils, "DEFAULT_FIJI_PATHS", [])
+    monkeypatch.setattr(
+        fiji_utils,
+        "_macos_search_roots",
+        fiji_utils._contextual_search_roots,
+    )
     monkeypatch.setattr(fiji_utils.shutil, "which", lambda _name: None)
 
     detected = find_fiji([])
