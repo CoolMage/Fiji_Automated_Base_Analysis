@@ -107,6 +107,277 @@ def _load_macro_file(name: str) -> str:
 
 MACROS_LIB = MacroLibrary()
 
+MACROS_LIB.add_from_file(
+    "inspect_image_metadata",
+    "inspect_image_metadata.ijm",
+    profile=MacroGuiProfile(
+        apply_roi_templates=False,
+        save_processed_images=False,
+        save_measurement_csv=True,
+        generate_measurement_summary=False,
+        processed_suffix="metadata",
+        measurements_folder="Metadata_QC",
+        processed_folder="Processed_Files",
+        measurement_prefix="image_metadata_summary",
+        note="Writes image dimensions, calibration, bit depth, and whole-stack intensity metadata for QC.",
+    ),
+)
+MACROS_LIB.add_from_file(
+    "split_channels_to_folder",
+    "split_channels_to_folder.ijm",
+    profile=MacroGuiProfile(
+        apply_roi_templates=False,
+        save_processed_images=True,
+        save_measurement_csv=False,
+        generate_measurement_summary=False,
+        processed_suffix="channels",
+        measurements_folder="Measurements",
+        processed_folder="Split_Channels",
+        measurement_prefix="measurements_summary",
+        note="Splits every channel into a per-image folder of TIFF files without measurements.",
+    ),
+)
+MACROS_LIB.add_from_file(
+    "create_mip_per_channel",
+    "create_mip_per_channel.ijm",
+    profile=MacroGuiProfile(
+        apply_roi_templates=False,
+        save_processed_images=True,
+        save_measurement_csv=False,
+        generate_measurement_summary=False,
+        processed_suffix="mip_channels",
+        measurements_folder="Measurements",
+        processed_folder="MIP_Channels",
+        measurement_prefix="measurements_summary",
+        note="Creates a max-intensity projection and saves one projected TIFF per channel.",
+    ),
+)
+MACROS_LIB.add_from_file(
+    "create_rgb_mip",
+    "create_rgb_mip.ijm",
+    profile=MacroGuiProfile(
+        apply_roi_templates=False,
+        save_processed_images=True,
+        save_measurement_csv=False,
+        generate_measurement_summary=False,
+        processed_suffix="rgb_mip",
+        measurements_folder="Measurements",
+        processed_folder="Processed_Files",
+        measurement_prefix="measurements_summary",
+        note="Creates a configurable RGB/composite MIP and separate color-channel QC TIFFs.",
+    ),
+)
+MACROS_LIB.add_from_file(
+    "export_channel_mip_with_display_range",
+    "export_channel_mip_with_display_range.ijm",
+    profile=MacroGuiProfile(
+        apply_roi_templates=False,
+        save_processed_images=True,
+        save_measurement_csv=False,
+        generate_measurement_summary=False,
+        processed_suffix="display_range",
+        measurements_folder="Measurements",
+        processed_folder="Processed_Files",
+        measurement_prefix="measurements_summary",
+        note="Exports one selected-channel MIP with a fixed display range for standardized QC.",
+    ),
+)
+MACROS_LIB.add_from_file(
+    "measure_full_image_per_channel",
+    "measure_full_image_per_channel.ijm",
+    profile=MacroGuiProfile(
+        apply_roi_templates=False,
+        save_processed_images=False,
+        save_measurement_csv=True,
+        generate_measurement_summary=True,
+        processed_suffix="processed",
+        measurements_folder="Measurements",
+        processed_folder="Processed_Files",
+        measurement_prefix="measurements_summary",
+        note="Measures every channel over the full image without projection or ROI loading.",
+    ),
+)
+MACROS_LIB.add_from_file(
+    "measure_mip_full_image_per_channel",
+    "measure_mip_full_image_per_channel.ijm",
+    profile=MacroGuiProfile(
+        apply_roi_templates=False,
+        save_processed_images=True,
+        save_measurement_csv=True,
+        generate_measurement_summary=True,
+        processed_suffix="processed",
+        measurements_folder="Measurements",
+        processed_folder="Processed_Files",
+        measurement_prefix="measurements_summary",
+        note="Builds a MIP, optionally saves it, and measures every channel over the full image.",
+    ),
+)
+MACROS_LIB.add_from_file(
+    "measure_rois_per_channel",
+    "measure_rois_per_channel.ijm",
+    profile=MacroGuiProfile(
+        apply_roi_templates=True,
+        save_processed_images=False,
+        save_measurement_csv=True,
+        generate_measurement_summary=True,
+        processed_suffix="processed",
+        measurements_folder="Measurements",
+        processed_folder="Processed_Files",
+        measurement_prefix="measurements_summary",
+        note="Loads matching ROI files and measures every ROI in every channel without projection.",
+    ),
+)
+MACROS_LIB.add_from_file(
+    "measure_mip_rois_per_channel",
+    "measure_mip_rois_per_channel.ijm",
+    profile=MacroGuiProfile(
+        apply_roi_templates=True,
+        save_processed_images=False,
+        save_measurement_csv=True,
+        generate_measurement_summary=True,
+        processed_suffix="processed",
+        measurements_folder="Measurements",
+        processed_folder="Processed_Files",
+        measurement_prefix="measurements_summary",
+        note="Builds a MIP, loads matching ROI files, and measures every ROI in every channel.",
+    ),
+)
+MACROS_LIB.add_from_file(
+    "measure_channel_mip_in_rois",
+    "measure_channel_mip_in_rois.ijm",
+    profile=MacroGuiProfile(
+        apply_roi_templates=True,
+        save_processed_images=False,
+        save_measurement_csv=True,
+        generate_measurement_summary=True,
+        processed_suffix="processed",
+        measurements_folder="Measurements",
+        processed_folder="Processed_Files",
+        measurement_prefix="measurements_summary",
+        note="Builds a selected-channel MIP and measures matching ROIs in that channel.",
+    ),
+)
+MACROS_LIB.add_from_file(
+    "measure_thresholded_area_full_image",
+    "measure_thresholded_area_full_image.ijm",
+    profile=MacroGuiProfile(
+        apply_roi_templates=False,
+        save_processed_images=False,
+        save_measurement_csv=True,
+        generate_measurement_summary=True,
+        processed_suffix="processed",
+        measurements_folder="Measurements",
+        processed_folder="Processed_Files",
+        measurement_prefix="measurements_summary",
+        note="Measures threshold-positive area and area fraction over the full image field.",
+    ),
+)
+MACROS_LIB.add_from_file(
+    "measure_thresholded_area_in_rois",
+    "measure_thresholded_area_in_rois.ijm",
+    profile=MacroGuiProfile(
+        apply_roi_templates=True,
+        save_processed_images=False,
+        save_measurement_csv=True,
+        generate_measurement_summary=True,
+        processed_suffix="processed",
+        measurements_folder="Measurements",
+        processed_folder="Processed_Files",
+        measurement_prefix="measurements_summary",
+        note="Builds a selected-channel MIP and measures threshold-positive area inside matching ROIs.",
+    ),
+)
+MACROS_LIB.add_from_file(
+    "create_threshold_mask",
+    "create_threshold_mask.ijm",
+    profile=MacroGuiProfile(
+        apply_roi_templates=False,
+        save_processed_images=True,
+        save_measurement_csv=False,
+        generate_measurement_summary=False,
+        processed_suffix="threshold_mask",
+        measurements_folder="Measurements",
+        processed_folder="Threshold_Masks",
+        measurement_prefix="measurements_summary",
+        note="Creates a selected-channel binary threshold mask for segmentation QC.",
+    ),
+)
+MACROS_LIB.add_from_file(
+    "detect_particles_full_image",
+    "detect_particles_full_image.ijm",
+    profile=MacroGuiProfile(
+        apply_roi_templates=False,
+        save_processed_images=True,
+        save_measurement_csv=True,
+        generate_measurement_summary=True,
+        processed_suffix="particles",
+        measurements_folder="Particle_Measurements",
+        processed_folder="Particle_QC",
+        measurement_prefix="particle_measurements_summary",
+        note="Detects thresholded particles over the full image, saves masks/ROIs, and exports particle measurements.",
+    ),
+)
+MACROS_LIB.add_from_file(
+    "detect_particles_in_roi",
+    "detect_particles_in_roi.ijm",
+    profile=MacroGuiProfile(
+        apply_roi_templates=True,
+        save_processed_images=True,
+        save_measurement_csv=True,
+        generate_measurement_summary=True,
+        processed_suffix="particles",
+        measurements_folder="Particle_Measurements",
+        processed_folder="Particle_QC",
+        measurement_prefix="particle_measurements_summary",
+        note="Restricts particle detection to a matching parent ROI and exports parent/particle measurements.",
+    ),
+)
+MACROS_LIB.add_from_file(
+    "measure_thresholded_area_and_particles_in_roi",
+    "measure_thresholded_area_and_particles_in_roi.ijm",
+    profile=MacroGuiProfile(
+        apply_roi_templates=True,
+        save_processed_images=True,
+        save_measurement_csv=True,
+        generate_measurement_summary=True,
+        processed_suffix="particles",
+        measurements_folder="Particle_Measurements",
+        processed_folder="Particle_QC",
+        measurement_prefix="thresholded_area_particle_summary",
+        note="Exports thresholded ROI area fraction, cropped QC images, masks, particle ROIs, and particle measurements.",
+    ),
+)
+MACROS_LIB.add_from_file(
+    "measure_3d_mask_overlap",
+    "measure_3d_mask_overlap.ijm",
+    profile=MacroGuiProfile(
+        apply_roi_templates=True,
+        save_processed_images=True,
+        save_measurement_csv=True,
+        generate_measurement_summary=True,
+        processed_suffix="mask_overlap",
+        measurements_folder="Mask_Overlap_Measurements",
+        processed_folder="Mask_Overlap_QC",
+        measurement_prefix="mask_overlap_summary",
+        note="Measures voxel-level overlap for two or three thresholded 3D channel masks.",
+    ),
+)
+MACROS_LIB.add_from_file(
+    "measure_local_enrichment_around_mask",
+    "measure_local_enrichment_around_mask.ijm",
+    profile=MacroGuiProfile(
+        apply_roi_templates=True,
+        save_processed_images=True,
+        save_measurement_csv=True,
+        generate_measurement_summary=True,
+        processed_suffix="local_enrichment",
+        measurements_folder="Local_Enrichment_Measurements",
+        processed_folder="Local_Enrichment_QC",
+        measurement_prefix="local_enrichment_summary",
+        note="Measures secondary-channel intensity enrichment inside a primary mask versus a local ring.",
+    ),
+)
+
 MACROS_LIB.add(
     "split_channels_to_subfolder",
     '''

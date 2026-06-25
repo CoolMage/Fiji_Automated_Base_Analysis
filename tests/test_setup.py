@@ -24,6 +24,27 @@ from fiji_automated_analysis.cli import (
 from fiji_automated_analysis.utils.general.fiji_utils import find_fiji
 from fiji_automated_analysis.utils.general.macro_builder import DEFAULT_MACRO_CODE, ImageData, MacroBuilder
 
+BASE_MACRO_NAMES = {
+    "inspect_image_metadata",
+    "split_channels_to_folder",
+    "create_mip_per_channel",
+    "create_rgb_mip",
+    "export_channel_mip_with_display_range",
+    "measure_full_image_per_channel",
+    "measure_mip_full_image_per_channel",
+    "measure_rois_per_channel",
+    "measure_mip_rois_per_channel",
+    "measure_channel_mip_in_rois",
+    "measure_thresholded_area_full_image",
+    "measure_thresholded_area_in_rois",
+    "create_threshold_mask",
+    "detect_particles_full_image",
+    "detect_particles_in_roi",
+    "measure_thresholded_area_and_particles_in_roi",
+    "measure_3d_mask_overlap",
+    "measure_local_enrichment_around_mask",
+}
+
 
 def test_configuration_imports() -> None:
     assert FijiConfig.get_fiji_paths()
@@ -228,6 +249,67 @@ def test_all_library_macros_format_without_escaped_block_braces() -> None:
         formatted = builder.build_macro(macro_code, image_data)
         assert "{{" not in formatted
         assert "}}" not in formatted
+
+
+def test_base_macro_library_contains_generic_templates() -> None:
+    assert BASE_MACRO_NAMES.issubset(MACROS_LIB.keys())
+
+
+def test_all_library_macros_have_headers_and_gui_profiles() -> None:
+    for macro_name in MACROS_LIB.keys():
+        macro_code = MACROS_LIB[macro_name]
+        first_nonempty_line = next(
+            line.strip() for line in macro_code.splitlines() if line.strip()
+        )
+
+        assert first_nonempty_line.startswith("//"), macro_name
+        assert MACROS_LIB.get_profile(macro_name) is not None, macro_name
+
+
+def test_base_macro_templates_include_expected_fiji_operations() -> None:
+    expected_snippets = {
+        "inspect_image_metadata": [
+            'run("Bio-Formats Macro Extensions");',
+            "Stack.getStatistics(",
+            'setResult("Channels"',
+            'saveAs("Results", resultsPath);',
+        ],
+        "measure_rois_per_channel": [
+            'roiManager("Open"',
+            'run("Set Measurements...", measurementsOptions);',
+            'setResult("ROI"',
+            'saveAs("Results", resultsPath);',
+        ],
+        "measure_thresholded_area_in_rois": [
+            'run("Z Project...", "projection=[" + projectionMethod + "]");',
+            "setThreshold(thresholdLow, thresholdHigh);",
+            "area_fraction limit",
+            'saveAs("Results", resultsPath);',
+        ],
+        "detect_particles_in_roi": [
+            'run("Analyze Particles..."',
+            'roiManager("Save"',
+            'setResult("ParentROI"',
+            'saveAs("Results", resultsPath);',
+        ],
+        "measure_3d_mask_overlap": [
+            "Stack.getStatistics(",
+            'imageCalculator("AND create stack"',
+            'setResult("PrimarySecondaryJaccard"',
+            'setResult("ThresholdCalibration"',
+        ],
+        "measure_local_enrichment_around_mask": [
+            'run("Dilate", "stack");',
+            'imageCalculator("Multiply create 32-bit stack"',
+            'setResult("SecondaryLocalEnrichmentRatio"',
+            'saveAs("Results", resultsPath);',
+        ],
+    }
+
+    for macro_name, snippets in expected_snippets.items():
+        macro_code = MACROS_LIB[macro_name]
+        for snippet in snippets:
+            assert snippet in macro_code, (macro_name, snippet)
 
 
 def test_rgb_mip_macro_maps_channels_and_saves_tiff() -> None:
