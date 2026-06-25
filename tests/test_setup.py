@@ -8,6 +8,7 @@ from fiji_automated_analysis.config import FijiConfig, FileConfig
 from fiji_automated_analysis.macros_lib import MACROS_LIB
 from fiji_automated_analysis.gui import (
     DEFAULT_UI_SCALE,
+    _format_macro_profile_summary,
     _fit_window_size,
     _get_ui_scale,
     _linux_directory_dialog,
@@ -97,6 +98,15 @@ def test_linux_selection_indicator_scales_with_gui() -> None:
     assert _selection_indicator_size(1.0) == 18
     assert _selection_indicator_size(1.5) == 24
     assert _selection_indicator_size(2.0) == 32
+
+
+def test_macro_profile_summary_exposes_recommended_defaults() -> None:
+    summary = _format_macro_profile_summary("measure_mip_rois_per_channel")
+
+    assert "Defaults:" in summary
+    assert "ROI on" in summary
+    assert "measurement CSV on" in summary
+    assert "Measurements folder: Measurements." in summary
 
 
 def test_linux_directory_dialog_prefers_zenity(

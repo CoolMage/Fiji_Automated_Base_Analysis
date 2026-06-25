@@ -45,6 +45,95 @@ from fiji_automated_analysis.utils.general.measurement_summary_utils import dete
 DEFAULT_UI_SCALE = 1.5
 WINDOW_HORIZONTAL_MARGIN = 80
 WINDOW_VERTICAL_MARGIN = 100
+DEFAULT_ROI_TEMPLATES = ("{name}.roi", "{name}.zip", "RoiSet_{name}.zip")
+UI_PAD_X = 12
+UI_PAD_Y = 10
+
+
+class ToolTip:
+    """Small delayed tooltip for classic Tk widgets."""
+
+    def __init__(self, widget: tk.Widget, text: str, delay_ms: int = 500) -> None:
+        self.widget = widget
+        self.text = text
+        self.delay_ms = delay_ms
+        self._after_id: Optional[str] = None
+        self._window: Optional[tk.Toplevel] = None
+        widget.bind("<Enter>", self._schedule, add="+")
+        widget.bind("<Leave>", self._hide, add="+")
+        widget.bind("<ButtonPress>", self._hide, add="+")
+
+    def _schedule(self, _event: tk.Event) -> None:
+        self._cancel()
+        self._after_id = self.widget.after(self.delay_ms, self._show)
+
+    def _cancel(self) -> None:
+        if self._after_id is not None:
+            self.widget.after_cancel(self._after_id)
+            self._after_id = None
+
+    def _show(self) -> None:
+        if self._window is not None or not self.text:
+            return
+        x = self.widget.winfo_rootx() + 12
+        y = self.widget.winfo_rooty() + self.widget.winfo_height() + 6
+        window = tk.Toplevel(self.widget)
+        window.wm_overrideredirect(True)
+        window.wm_geometry(f"+{x}+{y}")
+        label = tk.Label(
+            window,
+            text=self.text,
+            justify=tk.LEFT,
+            background="#ffffe8",
+            relief=tk.SOLID,
+            borderwidth=1,
+            padx=6,
+            pady=3,
+            wraplength=360,
+        )
+        label.pack()
+        self._window = window
+
+    def _hide(self, _event: tk.Event | None = None) -> None:
+        self._cancel()
+        if self._window is not None:
+            self._window.destroy()
+            self._window = None
+
+
+def _format_macro_profile_summary(macro_name: str) -> str:
+    """Return a compact GUI summary for a registered library macro."""
+
+    profile = MACROS_LIB.get_profile(macro_name)
+    if profile is None:
+        return "No recommended GUI defaults are defined for this macro."
+
+    defaults: list[str] = []
+    if profile.apply_roi_templates is not None:
+        defaults.append(f"ROI {'on' if profile.apply_roi_templates else 'off'}")
+    if profile.save_processed_images is not None:
+        defaults.append(
+            f"processed images {'on' if profile.save_processed_images else 'off'}"
+        )
+    if profile.save_measurement_csv is not None:
+        defaults.append(
+            f"measurement CSV {'on' if profile.save_measurement_csv else 'off'}"
+        )
+    if profile.generate_measurement_summary is not None:
+        defaults.append(
+            f"summary {'on' if profile.generate_measurement_summary else 'off'}"
+        )
+
+    parts = []
+    if defaults:
+        parts.append("Defaults: " + ", ".join(defaults) + ".")
+    if profile.measurements_folder:
+        parts.append(f"Measurements folder: {profile.measurements_folder}.")
+    if profile.processed_folder:
+        parts.append(f"Processed folder: {profile.processed_folder}.")
+    if profile.note:
+        parts.append(profile.note)
+    return " ".join(parts) or "No additional notes for this macro."
 
 
 def _get_ui_scale() -> float:
@@ -268,6 +357,7 @@ class FijiProcessorGUI:
         self.macro_library_var = tk.StringVar()
         self.macro_code_value = DEFAULT_MACRO_CODE
         self.macro_summary_var = tk.StringVar()
+        self.workflow_status_var = tk.StringVar(value="Ready")
         self._library_code_overrides: dict[str, str] = {}
         self._macro_profile_applied_text_values: dict[str, str] = {}
         self._macro_profile_default_texts = {
@@ -347,12 +437,29 @@ class FijiProcessorGUI:
             )
         return widget
 
+    def _attach_tooltip(self, widget: tk.Widget, text: str) -> tk.Widget:
+        """Attach a tooltip and keep a reference on the widget."""
+
+        setattr(widget, "_fiji_tooltip", ToolTip(widget, text))
+        return widget
+
+    def _hint_label(self, parent: tk.Widget, text: str, *, wraplength: int = 760) -> tk.Label:
+        """Return a muted helper label used sparingly in dense forms."""
+
+        return tk.Label(
+            parent,
+            text=text,
+            justify=tk.LEFT,
+            anchor="w",
+            wraplength=wraplength,
+        )
+
     # ------------------------------------------------------------------
     # Widget construction helpers
     # ------------------------------------------------------------------
     def _build_widgets(self) -> None:
         container = tk.Frame(self.root)
-        container.pack(fill=tk.BOTH, expand=True)
+        container.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
         canvas = tk.Canvas(container, highlightthickness=0)
         scrollbar = tk.Scrollbar(container, orient=tk.VERTICAL, command=canvas.yview)
@@ -361,7 +468,7 @@ class FijiProcessorGUI:
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-        main_frame = tk.Frame(canvas, padx=10, pady=10)
+        main_frame = tk.Frame(canvas, padx=UI_PAD_X, pady=UI_PAD_Y)
         frame_window = canvas.create_window((0, 0), window=main_frame, anchor="nw")
 
         def _configure_scroll_region(event: tk.Event) -> None:
@@ -374,8 +481,32 @@ class FijiProcessorGUI:
         canvas.bind("<Configure>", _resize_frame)
         self._enable_mousewheel(canvas)
 
+        header_frame = tk.Frame(main_frame)
+        header_frame.pack(fill=tk.X, expand=False, pady=(0, 12))
+        tk.Label(
+            header_frame,
+            text="Fiji Automated Base Analysis",
+            font=("TkDefaultFont", 16, "bold"),
+            anchor="w",
+        ).pack(fill=tk.X)
+        tk.Label(
+            header_frame,
+            text=(
+                "Choose a data folder, match images by filename, select a macro, "
+                "then run the batch."
+            ),
+            anchor="w",
+            justify=tk.LEFT,
+            wraplength=780,
+        ).pack(fill=tk.X, pady=(2, 0))
+
         # Path configuration -------------------------------------------------
-        path_frame = tk.LabelFrame(main_frame, text="Paths", padx=10, pady=10)
+        path_frame = tk.LabelFrame(
+            main_frame,
+            text="1. Required setup",
+            padx=10,
+            pady=10,
+        )
         path_frame.pack(fill=tk.X, expand=False, pady=(0, 10))
 
         self.base_path_var = tk.StringVar()
@@ -383,10 +514,11 @@ class FijiProcessorGUI:
 
         self._add_labeled_entry(
             path_frame,
-            "Base directory:",
+            "Image folder:",
             self.base_path_var,
             0,
             browse_command=self._browse_directory,
+            tooltip="Folder that contains the images to search recursively.",
         )
         self._add_labeled_entry(
             path_frame,
@@ -394,83 +526,52 @@ class FijiProcessorGUI:
             self.fiji_path_var,
             1,
             browse_command=lambda: self._browse_file(self.fiji_path_var),
+            tooltip="Path to Fiji.app/ImageJ executable. Leave empty to auto-detect.",
         )
-        tk.Button(path_frame, text="Auto-detect", command=self._auto_detect_fiji).grid(
+        detect_button = tk.Button(path_frame, text="Detect Fiji", command=self._auto_detect_fiji)
+        detect_button.grid(
             row=1, column=3, padx=(5, 0)
         )
+        self._attach_tooltip(detect_button, "Find a Fiji or ImageJ executable automatically.")
 
         # Keyword configuration ---------------------------------------------
-        keyword_frame = tk.LabelFrame(main_frame, text="Keywords", padx=10, pady=10)
+        keyword_frame = tk.LabelFrame(main_frame, text="2. File matching", padx=10, pady=10)
         keyword_frame.pack(fill=tk.BOTH, expand=False, pady=(0, 10))
+        self._hint_label(
+            keyword_frame,
+            "Add one or more filename keywords. Images are processed when their filenames contain a keyword.",
+        ).grid(row=0, column=0, columnspan=3, sticky="we", pady=(0, 6))
 
         self.keyword_var = tk.StringVar()
         keyword_entry = tk.Entry(keyword_frame, textvariable=self.keyword_var)
-        keyword_entry.grid(row=0, column=0, sticky="we")
+        keyword_entry.grid(row=1, column=0, sticky="we")
 
-        add_keyword_btn = tk.Button(keyword_frame, text="Add", command=self._add_keyword)
-        add_keyword_btn.grid(row=0, column=1, padx=5)
+        add_keyword_btn = tk.Button(keyword_frame, text="Add keyword", command=self._add_keyword)
+        add_keyword_btn.grid(row=1, column=1, padx=5)
 
         remove_keyword_btn = tk.Button(
-            keyword_frame, text="Remove Selected", command=self._remove_selected_keyword
+            keyword_frame, text="Remove", command=self._remove_selected_keyword
         )
-        remove_keyword_btn.grid(row=0, column=2)
+        remove_keyword_btn.grid(row=1, column=2)
 
         keyword_frame.grid_columnconfigure(0, weight=1)
 
         self.keyword_listbox = tk.Listbox(keyword_frame, height=4, selectmode=tk.EXTENDED)
-        self.keyword_listbox.grid(row=1, column=0, columnspan=3, sticky="nsew", pady=(5, 0))
+        self.keyword_listbox.grid(row=2, column=0, columnspan=3, sticky="nsew", pady=(5, 0))
 
-        keyword_frame.grid_rowconfigure(1, weight=1)
+        keyword_frame.grid_rowconfigure(2, weight=1)
 
-        # ROI templates ------------------------------------------------------
-        roi_frame = tk.LabelFrame(main_frame, text="ROI Templates", padx=10, pady=10)
-        roi_frame.pack(fill=tk.BOTH, expand=False, pady=(0, 10))
-
-        self.roi_var = tk.StringVar()
-        roi_entry = tk.Entry(roi_frame, textvariable=self.roi_var)
-        roi_entry.grid(row=0, column=0, sticky="we")
-
-        add_roi_btn = tk.Button(roi_frame, text="Add", command=self._add_roi_template)
-        add_roi_btn.grid(row=0, column=1, padx=5)
-
-        remove_roi_btn = tk.Button(
-            roi_frame, text="Remove Selected", command=self._remove_selected_roi_template
-        )
-        remove_roi_btn.grid(row=0, column=2)
-
-        roi_frame.grid_columnconfigure(0, weight=1)
-
-        self.roi_listbox = tk.Listbox(roi_frame, height=3, selectmode=tk.EXTENDED)
-        self.roi_listbox.grid(row=1, column=0, columnspan=3, sticky="nsew", pady=(5, 0))
-
-        roi_frame.grid_rowconfigure(1, weight=1)
-
-        # Custom filename extractors -----------------------------------------
-        extract_frame = tk.LabelFrame(main_frame, text="Custom Filename Placeholders", padx=10, pady=10)
-        extract_frame.pack(fill=tk.BOTH, expand=False, pady=(0, 10))
-
-        tk.Label(extract_frame, text="Name (used as {name} in macro)").grid(row=0, column=0, sticky="w")
-        tk.Label(extract_frame, text="Mask (X=digits, Y=letters)").grid(row=0, column=1, sticky="w")
-
-        self.extract_name_var = tk.StringVar()
-        self.extract_mask_var = tk.StringVar()
-        name_entry = tk.Entry(extract_frame, textvariable=self.extract_name_var)
-        mask_entry = tk.Entry(extract_frame, textvariable=self.extract_mask_var)
-        name_entry.grid(row=1, column=0, sticky="we", padx=(0,5))
-        mask_entry.grid(row=1, column=1, sticky="we")
-
-        tk.Button(extract_frame, text="Add", command=self._add_custom_extractor).grid(row=1, column=2, padx=(5,0))
-        tk.Button(extract_frame, text="Remove Selected", command=self._remove_selected_extractor).grid(row=1, column=3, padx=(5,0))
-
-        extract_frame.grid_columnconfigure(0, weight=1)
-        extract_frame.grid_columnconfigure(1, weight=2)
-
-        self.extract_listbox = tk.Listbox(extract_frame, height=4, selectmode=tk.EXTENDED)
-        self.extract_listbox.grid(row=2, column=0, columnspan=4, sticky="nsew", pady=(5, 0))
-        extract_frame.grid_rowconfigure(2, weight=1)
+        # Macro configuration ------------------------------------------------
+        macro_frame = tk.LabelFrame(main_frame, text="3. Macro", padx=10, pady=10)
+        macro_frame.pack(fill=tk.X, expand=False, pady=(0, 10))
+        self._hint_label(
+            macro_frame,
+            "Choose a bundled macro or paste complete Fiji macro code. Library macros can apply recommended output settings.",
+        ).grid(row=0, column=0, columnspan=4, sticky="we", pady=(0, 6))
+        self._add_macro_configuration(macro_frame, 1)
 
         # Processing options -------------------------------------------------
-        options_frame = tk.LabelFrame(main_frame, text="Processing Options", padx=10, pady=10)
+        options_frame = tk.LabelFrame(main_frame, text="4. Output settings", padx=10, pady=10)
         options_frame.pack(fill=tk.BOTH, expand=False, pady=(0, 10))
 
         self.secondary_filter_var = tk.StringVar()
@@ -509,7 +610,6 @@ class FijiProcessorGUI:
             self.secondary_filter_var,
             tooltip="Optional secondary substring that must also be present.",
         )
-        row = self._add_macro_configuration(options_frame, row)
         row = self._add_option_entry(options_frame, row, "Processed suffix:", self.suffix_var)
         row = self._add_option_entry(
             options_frame, row, "Measurements folder:", self.measurements_folder_var
@@ -522,32 +622,98 @@ class FijiProcessorGUI:
         )
 
         checkbox_frame = tk.Frame(options_frame)
-        checkbox_frame.grid(row=row, column=0, columnspan=2, sticky="w", pady=(5, 0))
+        checkbox_frame.grid(row=row, column=0, columnspan=2, sticky="we", pady=(7, 0))
 
-        self._checkbutton(
-            checkbox_frame, text="Apply ROI templates", variable=self.apply_roi_var
-        ).pack(anchor="w")
-        self._checkbutton(
-            checkbox_frame, text="Save processed images", variable=self.save_processed_var
-        ).pack(anchor="w")
-        self._checkbutton(
-            checkbox_frame, text="Save measurement CSV", variable=self.save_measurements_var
-        ).pack(anchor="w")
-        self._checkbutton(
-            checkbox_frame, text="Verbose logging", variable=self.verbose_var
-        ).pack(anchor="w")
-        self._checkbutton(
-            checkbox_frame, text="Generate measurement summary", variable=self.generate_summary_var
-        ).pack(anchor="w")
+        checkboxes = (
+            ("Apply ROI templates", self.apply_roi_var),
+            ("Save processed images", self.save_processed_var),
+            ("Save measurement CSV", self.save_measurements_var),
+            ("Generate measurement summary", self.generate_summary_var),
+            ("Verbose logging", self.verbose_var),
+        )
+        for index, (label, variable) in enumerate(checkboxes):
+            self._checkbutton(
+                checkbox_frame,
+                text=label,
+                variable=variable,
+            ).grid(row=index // 2, column=index % 2, sticky="w", padx=(0, 18), pady=(0, 2))
+        checkbox_frame.grid_columnconfigure(0, weight=1)
+        checkbox_frame.grid_columnconfigure(1, weight=1)
+
+        # Optional ROI templates --------------------------------------------
+        roi_frame = self._create_collapsible_section(
+            main_frame,
+            "Optional: ROI templates",
+        )
+        self._hint_label(
+            roi_frame,
+            "Use ROI templates when analysis should load ROI files that match each image name.",
+        ).grid(row=0, column=0, columnspan=4, sticky="we", pady=(0, 6))
+
+        self.roi_var = tk.StringVar()
+        roi_entry = tk.Entry(roi_frame, textvariable=self.roi_var)
+        roi_entry.grid(row=1, column=0, sticky="we")
+
+        add_roi_btn = tk.Button(roi_frame, text="Add template", command=self._add_roi_template)
+        add_roi_btn.grid(row=1, column=1, padx=5)
+
+        remove_roi_btn = tk.Button(
+            roi_frame, text="Remove", command=self._remove_selected_roi_template
+        )
+        remove_roi_btn.grid(row=1, column=2)
+        default_roi_btn = tk.Button(
+            roi_frame,
+            text="Use defaults",
+            command=self._add_default_roi_templates,
+        )
+        default_roi_btn.grid(row=1, column=3, padx=(5, 0))
+        self._attach_tooltip(
+            default_roi_btn,
+            "Adds {name}.roi, {name}.zip, and RoiSet_{name}.zip templates.",
+        )
+
+        roi_frame.grid_columnconfigure(0, weight=1)
+
+        self.roi_listbox = tk.Listbox(roi_frame, height=3, selectmode=tk.EXTENDED)
+        self.roi_listbox.grid(row=2, column=0, columnspan=4, sticky="nsew", pady=(5, 0))
+
+        roi_frame.grid_rowconfigure(2, weight=1)
+
+        # Optional filename extractors --------------------------------------
+        extract_frame = self._create_collapsible_section(
+            main_frame,
+            "Optional: filename placeholders",
+        )
+        self._hint_label(
+            extract_frame,
+            "Create custom placeholders from filename masks when a macro needs values such as animal, slice, or group IDs.",
+        ).grid(row=0, column=0, columnspan=4, sticky="we", pady=(0, 6))
+
+        tk.Label(extract_frame, text="Name ({name})").grid(row=1, column=0, sticky="w")
+        tk.Label(extract_frame, text="Mask (X=digits, Y=letters)").grid(row=1, column=1, sticky="w")
+
+        self.extract_name_var = tk.StringVar()
+        self.extract_mask_var = tk.StringVar()
+        name_entry = tk.Entry(extract_frame, textvariable=self.extract_name_var)
+        mask_entry = tk.Entry(extract_frame, textvariable=self.extract_mask_var)
+        name_entry.grid(row=2, column=0, sticky="we", padx=(0, 5))
+        mask_entry.grid(row=2, column=1, sticky="we")
+
+        tk.Button(extract_frame, text="Add", command=self._add_custom_extractor).grid(row=2, column=2, padx=(5, 0))
+        tk.Button(extract_frame, text="Remove", command=self._remove_selected_extractor).grid(row=2, column=3, padx=(5, 0))
+
+        extract_frame.grid_columnconfigure(0, weight=1)
+        extract_frame.grid_columnconfigure(1, weight=2)
+
+        self.extract_listbox = tk.Listbox(extract_frame, height=4, selectmode=tk.EXTENDED)
+        self.extract_listbox.grid(row=3, column=0, columnspan=4, sticky="nsew", pady=(5, 0))
+        extract_frame.grid_rowconfigure(3, weight=1)
 
         # Optional 3D deconvolution -----------------------------------------
-        deconvolution_frame = tk.LabelFrame(
+        deconvolution_frame = self._create_collapsible_section(
             main_frame,
-            text="3D Deconvolution (optional)",
-            padx=10,
-            pady=10,
+            "Optional: 3D deconvolution",
         )
-        deconvolution_frame.pack(fill=tk.BOTH, expand=False, pady=(0, 10))
 
         self._checkbutton(
             deconvolution_frame,
@@ -640,8 +806,10 @@ class FijiProcessorGUI:
         self._update_deconvolution_psf_mode()
 
         # Summary aggregation ------------------------------------------------
-        summary_frame = tk.LabelFrame(main_frame, text="Summary Aggregation", padx=10, pady=10)
-        summary_frame.pack(fill=tk.BOTH, expand=False, pady=(0, 10))
+        summary_frame = self._create_collapsible_section(
+            main_frame,
+            "Optional: summary aggregation",
+        )
 
         tk.Label(
             summary_frame,
@@ -683,32 +851,59 @@ class FijiProcessorGUI:
         self.group_prefix_rows_frame.grid(row=5, column=0, columnspan=3, sticky="we", pady=(4, 0))
         summary_frame.grid_columnconfigure(1, weight=1)
 
-        # Action buttons -----------------------------------------------------
-        action_frame = tk.Frame(main_frame)
-        action_frame.pack(fill=tk.X, pady=(0, 10))
-
-        self.validate_button = tk.Button(action_frame, text="Validate Setup", command=self._validate_setup)
-        self.validate_button.pack(side=tk.LEFT)
-
-        self.list_placeholders_button = tk.Button(
-            action_frame, text="List Placeholders", command=self._list_placeholders
-        )
-        self.list_placeholders_button.pack(side=tk.LEFT, padx=5)
-
-        self.run_button = tk.Button(action_frame, text="Run Processing", command=self._run_processing)
-        self.run_button.pack(side=tk.RIGHT)
-        self.stop_button = tk.Button(action_frame, text="Stop", command=self._stop_processing)
-        self.stop_button.pack(side=tk.RIGHT, padx=(5, 5))
-        self.stop_button.configure(state=tk.DISABLED)
-
         # Log output ---------------------------------------------------------
         log_frame = tk.LabelFrame(main_frame, text="Log", padx=10, pady=10)
         log_frame.pack(fill=tk.BOTH, expand=True)
 
+        log_button_frame = tk.Frame(log_frame)
+        log_button_frame.pack(fill=tk.X, pady=(0, 5))
+        clear_log_button = tk.Button(
+            log_button_frame,
+            text="Clear log",
+            command=self._clear_log,
+        )
+        clear_log_button.pack(side=tk.RIGHT)
+        self._attach_tooltip(clear_log_button, "Clear only the visible log text.")
+
         self.log_widget = scrolledtext.ScrolledText(log_frame, wrap=tk.WORD, state="disabled")
         self.log_widget.pack(fill=tk.BOTH, expand=True)
 
+        # Persistent action bar ---------------------------------------------
+        action_frame = tk.Frame(self.root, padx=UI_PAD_X, pady=8, relief=tk.GROOVE, borderwidth=1)
+        action_frame.pack(side=tk.BOTTOM, fill=tk.X)
+
+        status_label = tk.Label(
+            action_frame,
+            textvariable=self.workflow_status_var,
+            anchor="w",
+            justify=tk.LEFT,
+        )
+        status_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+        self.validate_button = tk.Button(action_frame, text="Validate", command=self._validate_setup)
+        self.validate_button.pack(side=tk.LEFT, padx=(8, 0))
+        self._attach_tooltip(self.validate_button, "Check Fiji/ImageJ and plugin availability.")
+
+        self.list_placeholders_button = tk.Button(
+            action_frame, text="Placeholders", command=self._list_placeholders
+        )
+        self.list_placeholders_button.pack(side=tk.LEFT, padx=(5, 0))
+
+        self.stop_button = tk.Button(action_frame, text="Stop", command=self._stop_processing)
+        self.stop_button.pack(side=tk.RIGHT, padx=(5, 0))
+        self.stop_button.configure(state=tk.DISABLED)
+
+        self.run_button = tk.Button(
+            action_frame,
+            text="Run processing",
+            command=self._run_processing,
+            padx=12,
+        )
+        self.run_button.pack(side=tk.RIGHT)
+
         self._update_macro_summary()
+        self._wire_workflow_status_updates()
+        self._update_workflow_status()
         self._refresh_group_animal_prefix_rows()
 
     def _add_labeled_entry(
@@ -719,13 +914,19 @@ class FijiProcessorGUI:
         row: int,
         *,
         browse_command=None,
+        tooltip: Optional[str] = None,
     ) -> None:
         tk.Label(parent, text=label).grid(row=row, column=0, sticky="w")
         entry = tk.Entry(parent, textvariable=variable)
         entry.grid(row=row, column=1, sticky="we", padx=(5, 5))
+        if tooltip:
+            self._attach_tooltip(entry, tooltip)
         parent.grid_columnconfigure(1, weight=1)
         if browse_command is not None:
-            tk.Button(parent, text="Browse", command=browse_command).grid(row=row, column=2)
+            button = tk.Button(parent, text="Choose...", command=browse_command)
+            button.grid(row=row, column=2)
+            if tooltip:
+                self._attach_tooltip(button, tooltip)
 
     def _add_option_entry(
         self,
@@ -739,6 +940,8 @@ class FijiProcessorGUI:
         tk.Label(parent, text=label).grid(row=row, column=0, sticky="w")
         entry = tk.Entry(parent, textvariable=variable)
         entry.grid(row=row, column=1, sticky="we", padx=(5, 0), pady=(0, 3))
+        if tooltip:
+            self._attach_tooltip(entry, tooltip)
         parent.grid_columnconfigure(1, weight=1)
         return row + 1
 
@@ -753,14 +956,101 @@ class FijiProcessorGUI:
             pady=2,
         )
         summary.grid(row=row, column=1, sticky="we", padx=(5, 0), pady=(0, 3))
-        tk.Button(parent, text="Configure...", command=self._open_macro_window).grid(
+        configure_button = tk.Button(parent, text="Choose macro...", command=self._open_macro_window)
+        configure_button.grid(
             row=row, column=2, padx=(5, 0)
         )
-        tk.Button(parent, text="Apply Defaults", command=self._apply_selected_macro_profile).grid(
+        self._attach_tooltip(configure_button, "Select a bundled macro or paste full macro code.")
+        defaults_button = tk.Button(parent, text="Apply defaults", command=self._apply_selected_macro_profile)
+        defaults_button.grid(
             row=row, column=3, padx=(5, 0)
         )
+        self._attach_tooltip(defaults_button, "Apply recommended output settings for the selected library macro.")
         parent.grid_columnconfigure(1, weight=1)
         return row + 1
+
+    def _create_collapsible_section(
+        self,
+        parent: tk.Widget,
+        title: str,
+        *,
+        initially_open: bool = False,
+    ) -> tk.LabelFrame:
+        """Create a compact disclosure section and return its content frame."""
+
+        outer = tk.Frame(parent)
+        outer.pack(fill=tk.X, expand=False, pady=(0, 8))
+        is_open = tk.BooleanVar(value=initially_open)
+
+        content = tk.LabelFrame(outer, text=title, padx=10, pady=10)
+        toggle_button = tk.Button(
+            outer,
+            anchor="w",
+            relief=tk.FLAT,
+            command=lambda: _toggle(),
+        )
+        toggle_button.pack(fill=tk.X)
+
+        def _refresh() -> None:
+            prefix = "- " if is_open.get() else "+ "
+            toggle_button.configure(text=prefix + title)
+            if is_open.get():
+                content.pack(fill=tk.BOTH, expand=False, pady=(2, 0))
+            else:
+                content.pack_forget()
+
+        def _toggle() -> None:
+            is_open.set(not is_open.get())
+            _refresh()
+
+        _refresh()
+        return content
+
+    def _wire_workflow_status_updates(self) -> None:
+        """Refresh the compact status line when important form fields change."""
+
+        variables = (
+            self.base_path_var,
+            self.fiji_path_var,
+            self.macro_mode_var,
+            self.macro_library_var,
+            self.secondary_filter_var,
+            self.apply_roi_var,
+            self.save_processed_var,
+            self.save_measurements_var,
+            self.generate_summary_var,
+            self.deconvolution_enabled_var,
+        )
+        for variable in variables:
+            variable.trace_add("write", lambda *_: self._update_workflow_status())
+
+    def _update_workflow_status(self) -> None:
+        """Show a short, always-visible summary of the current setup."""
+
+        base_ready = "folder set" if self.base_path_var.get().strip() else "folder missing"
+        keyword_count = self.keyword_listbox.size() if hasattr(self, "keyword_listbox") else 0
+        roi_count = self.roi_listbox.size() if hasattr(self, "roi_listbox") else 0
+        macro_mode = self.macro_mode_var.get()
+        if macro_mode == "library":
+            macro_label = self.macro_library_var.get().strip() or "library macro not selected"
+        else:
+            macro_label = "custom macro code"
+
+        outputs: list[str] = []
+        if self.save_processed_var.get():
+            outputs.append("images")
+        if self.save_measurements_var.get():
+            outputs.append("CSV")
+        if self.generate_summary_var.get():
+            outputs.append("summary")
+        if self.deconvolution_enabled_var.get():
+            outputs.append("deconvolution")
+
+        output_label = ", ".join(outputs) if outputs else "no optional outputs"
+        self.workflow_status_var.set(
+            f"{base_ready} | {keyword_count} keyword(s) | {roi_count} ROI template(s) | "
+            f"{macro_label} | {output_label}"
+        )
 
     def _enable_mousewheel(self, canvas: tk.Canvas) -> None:
         def _on_mousewheel(event: tk.Event) -> None:
@@ -789,8 +1079,11 @@ class FijiProcessorGUI:
         library_names = sorted(MACROS_LIB.keys())
         initial_library = self.macro_library_var.get() or (library_names[0] if library_names else "")
         library_var = tk.StringVar(value=initial_library)
+        library_note_var = tk.StringVar(
+            value=_format_macro_profile_summary(initial_library) if initial_library else ""
+        )
 
-        mode_frame = tk.LabelFrame(window, text="Macro input mode", padx=10, pady=10)
+        mode_frame = tk.LabelFrame(window, text="Macro source", padx=10, pady=10)
         mode_frame.pack(fill=tk.X, padx=10, pady=(10, 0))
 
         # Pack the action bar before the editor so Save/Cancel always remain visible.
@@ -809,8 +1102,8 @@ class FijiProcessorGUI:
                 window.focus_set()
 
         for label, value in (
-            ("Full macro code", "code"),
-            ("Library macro", "library"),
+            ("Paste complete macro code", "code"),
+            ("Use bundled library macro", "library"),
         ):
             self._radiobutton(
                 mode_frame,
@@ -830,8 +1123,8 @@ class FijiProcessorGUI:
         tk.Label(
             code_frame,
             text=(
-                "Paste the complete Fiji macro code."
-                " Template placeholders such as {input_path} are supported."
+                "Paste complete Fiji macro code. Template placeholders such as "
+                "{input_path} are supported."
             ),
             wraplength=560,
             justify=tk.LEFT,
@@ -845,8 +1138,8 @@ class FijiProcessorGUI:
         tk.Label(
             library_frame,
             text=(
-                "Select a macro template from the bundled library."
-                " The template will be formatted with document details at runtime."
+                "Select a bundled macro template. It will be formatted with "
+                "document details at runtime."
             ),
             wraplength=560,
             justify=tk.LEFT,
@@ -868,6 +1161,9 @@ class FijiProcessorGUI:
             library_code_text.delete("1.0", tk.END)
             library_code_text.insert("1.0", code_value)
             library_code_text.edit_modified(False)
+            library_note_var.set(
+                _format_macro_profile_summary(library_var.get().strip())
+            )
 
         if library_names:
             option_menu = tk.OptionMenu(
@@ -878,6 +1174,13 @@ class FijiProcessorGUI:
             )
             option_menu.configure(anchor="w", width=45)
             option_menu.pack(fill=tk.X, pady=(0, 5))
+            tk.Label(
+                library_frame,
+                textvariable=library_note_var,
+                justify=tk.LEFT,
+                wraplength=560,
+                anchor="w",
+            ).pack(fill=tk.X, pady=(0, 6))
             library_code_text = scrolledtext.ScrolledText(
                 library_frame,
                 wrap=tk.WORD,
@@ -946,6 +1249,8 @@ class FijiProcessorGUI:
             else:
                 text = f"Library macro: {summary}"
         self.macro_summary_var.set(text)
+        if hasattr(self, "workflow_status_var"):
+            self._update_workflow_status()
 
     def _get_selected_library_macro_name(self) -> str:
         if self.macro_mode_var.get() != "library":
@@ -1576,11 +1881,13 @@ class FijiProcessorGUI:
         self.keyword_var.set("")
         self._refresh_group_animal_prefix_rows()
         self._auto_detect_summary_patterns(silent=True, overwrite=False)
+        self._update_workflow_status()
 
     def _remove_selected_keyword(self) -> None:
         self._remove_selected(self.keyword_listbox)
         self._refresh_group_animal_prefix_rows()
         self._auto_detect_summary_patterns(silent=True, overwrite=False)
+        self._update_workflow_status()
 
     def _add_roi_template(self) -> None:
         value = self.roi_var.get().strip()
@@ -1590,9 +1897,26 @@ class FijiProcessorGUI:
             if template:
                 self.roi_listbox.insert(tk.END, template)
         self.roi_var.set("")
+        self._update_workflow_status()
 
     def _remove_selected_roi_template(self) -> None:
         self._remove_selected(self.roi_listbox)
+        self._update_workflow_status()
+
+    def _add_default_roi_templates(self) -> None:
+        existing = set(self._collect_listbox_values(self.roi_listbox))
+        added = False
+        for template in DEFAULT_ROI_TEMPLATES:
+            if template not in existing:
+                self.roi_listbox.insert(tk.END, template)
+                added = True
+        if not self.apply_roi_var.get():
+            self.apply_roi_var.set(True)
+        if added:
+            self._log("Added default ROI templates.")
+        else:
+            self._log("Default ROI templates are already listed.")
+        self._update_workflow_status()
 
     def _remove_selected(self, listbox: tk.Listbox) -> None:
         selection = listbox.curselection()
@@ -1614,6 +1938,11 @@ class FijiProcessorGUI:
     # ------------------------------------------------------------------
     def _log(self, message: str) -> None:
         self._log_queue.put(message)
+
+    def _clear_log(self) -> None:
+        self.log_widget.configure(state="normal")
+        self.log_widget.delete("1.0", tk.END)
+        self.log_widget.configure(state="disabled")
 
     def _process_log_queue(self) -> None:
         while True:
