@@ -12,6 +12,7 @@ from fiji_automated_analysis.gui import (
     _fit_window_size,
     _get_ui_scale,
     _linux_directory_dialog,
+    _read_macro_file,
     _selection_indicator_size,
 )
 from fiji_automated_analysis.cli import (
@@ -510,6 +511,21 @@ def test_cli_resolves_only_complete_code_or_library(tmp_path) -> None:
     library_name = sorted(MACROS_LIB.keys())[0]
     assert _resolve_macro_code(macro_library=library_name) == MACROS_LIB[library_name]
     assert _resolve_macro_code() == DEFAULT_MACRO_CODE
+
+
+def test_gui_reads_macro_file_source(tmp_path) -> None:
+    macro_path = tmp_path / "analysis.ijm"
+    macro_path.write_text('\ufeffopen("{input_path}");\n', encoding="utf-8")
+
+    assert _read_macro_file(str(macro_path)) == 'open("{input_path}");'
+
+    empty_path = tmp_path / "empty.ijm"
+    empty_path.write_text(" \n", encoding="utf-8")
+    with pytest.raises(ValueError, match="empty"):
+        _read_macro_file(str(empty_path))
+
+    with pytest.raises(ValueError, match="Unable to read macro file"):
+        _read_macro_file(str(tmp_path / "missing.ijm"))
 
 
 def test_cli_no_longer_accepts_pseudo_commands() -> None:

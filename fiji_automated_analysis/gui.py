@@ -11,6 +11,7 @@ import queue
 import shutil
 import subprocess
 import threading
+from pathlib import Path
 from typing import Iterable, List, Sequence, Optional, Union
 
 import tkinter as tk
@@ -333,6 +334,28 @@ def _linux_directory_dialog(
     return False, None
 
 
+def _read_macro_file(path_value: str) -> str:
+    """Read a complete Fiji macro file selected through the GUI."""
+
+    cleaned_path = path_value.strip()
+    if not cleaned_path:
+        raise ValueError("Choose a Fiji macro file.")
+
+    path = Path(cleaned_path).expanduser()
+    try:
+        value = path.read_text(encoding="utf-8-sig").strip()
+    except UnicodeDecodeError as exc:
+        raise ValueError(
+            f"Unable to read macro file '{path}' as UTF-8 text: {exc}"
+        ) from exc
+    except OSError as exc:
+        raise ValueError(f"Unable to read macro file '{path}': {exc}") from exc
+
+    if not value:
+        raise ValueError(f"Macro file '{path}' is empty.")
+    return value
+
+
 class FijiProcessorGUI:
     """Tkinter-based GUI for orchestrating Fiji document processing."""
 
@@ -355,6 +378,7 @@ class FijiProcessorGUI:
 
         self.macro_mode_var = tk.StringVar(value="code")
         self.macro_library_var = tk.StringVar()
+        self.macro_file_var = tk.StringVar()
         self.macro_code_value = DEFAULT_MACRO_CODE
         self.macro_summary_var = tk.StringVar()
         self.workflow_status_var = tk.StringVar(value="Ready")
@@ -566,7 +590,7 @@ class FijiProcessorGUI:
         macro_frame.pack(fill=tk.X, expand=False, pady=(0, 10))
         self._hint_label(
             macro_frame,
-            "Choose a bundled macro or paste complete Fiji macro code. Library macros can apply recommended output settings.",
+            "Choose a bundled macro, load a macro file, or paste complete Fiji macro code. Library macros can apply recommended output settings.",
         ).grid(row=0, column=0, columnspan=4, sticky="we", pady=(0, 6))
         self._add_macro_configuration(macro_frame, 1)
 
@@ -960,7 +984,7 @@ class FijiProcessorGUI:
         configure_button.grid(
             row=row, column=2, padx=(5, 0)
         )
-        self._attach_tooltip(configure_button, "Select a bundled macro or paste full macro code.")
+        self._attach_tooltip(configure_button, "Select a bundled macro, load a macro file, or paste full macro code.")
         defaults_button = tk.Button(parent, text="Apply defaults", command=self._apply_selected_macro_profile)
         defaults_button.grid(
             row=row, column=3, padx=(5, 0)
@@ -1014,6 +1038,7 @@ class FijiProcessorGUI:
             self.fiji_path_var,
             self.macro_mode_var,
             self.macro_library_var,
+            self.macro_file_var,
             self.secondary_filter_var,
             self.apply_roi_var,
             self.save_processed_var,
@@ -1033,6 +1058,9 @@ class FijiProcessorGUI:
         macro_mode = self.macro_mode_var.get()
         if macro_mode == "library":
             macro_label = self.macro_library_var.get().strip() or "library macro not selected"
+        elif macro_mode == "file":
+            macro_path = self.macro_file_var.get().strip()
+            macro_label = os.path.basename(macro_path) if macro_path else "macro file not selected"
         else:
             macro_label = "custom macro code"
 
@@ -1082,6 +1110,10 @@ class FijiProcessorGUI:
         library_note_var = tk.StringVar(
             value=_format_macro_profile_summary(initial_library) if initial_library else ""
         )
+        file_var = tk.StringVar(value=self.macro_file_var.get())
+        file_status_var = tk.StringVar()
+        if file_var.get().strip():
+            file_status_var.set(f"Selected: {os.path.basename(file_var.get().strip())}")
 
         mode_frame = tk.LabelFrame(window, text="Macro source", padx=10, pady=10)
         mode_frame.pack(fill=tk.X, padx=10, pady=(10, 0))
@@ -1098,11 +1130,14 @@ class FijiProcessorGUI:
             frame.pack(fill=tk.BOTH, expand=True)
             if frame is code_frame:
                 code_text.focus_set()
+            elif frame is file_frame:
+                file_entry.focus_set()
             else:
                 window.focus_set()
 
         for label, value in (
             ("Paste complete macro code", "code"),
+            ("Load macro from file", "file"),
             ("Use bundled library macro", "library"),
         ):
             self._radiobutton(
@@ -1132,6 +1167,60 @@ class FijiProcessorGUI:
         code_text = scrolledtext.ScrolledText(code_frame, wrap=tk.WORD, height=15)
         code_text.insert("1.0", self.macro_code_value)
         code_text.pack(fill=tk.BOTH, expand=True)
+
+        # Macro file selection -------------------------------------------------
+        file_frame = tk.Frame(content_frame)
+        tk.Label(
+            file_frame,
+            text=(
+                "Choose a complete Fiji macro file. Template placeholders such as "
+                "{input_path} are supported."
+            ),
+            wraplength=560,
+            justify=tk.LEFT,
+        ).pack(fill=tk.X, pady=(0, 5))
+        file_path_frame = tk.Frame(file_frame)
+        file_path_frame.pack(fill=tk.X, pady=(0, 5))
+        file_entry = tk.Entry(file_path_frame, textvariable=file_var)
+        file_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+        def _browse_macro_file() -> None:
+            current_path = file_var.get().strip()
+            if current_path:
+                initial_directory = os.path.dirname(
+                    os.path.abspath(os.path.expanduser(current_path))
+                )
+            else:
+                initial_directory = self.base_path_var.get().strip() or os.getcwd()
+                initial_directory = os.path.abspath(os.path.expanduser(initial_directory))
+            if not os.path.isdir(initial_directory):
+                initial_directory = os.getcwd()
+
+            selected_path = filedialog.askopenfilename(
+                parent=window,
+                title="Choose Fiji macro file",
+                initialdir=initial_directory,
+                filetypes=(
+                    ("Fiji macro files", "*.ijm"),
+                    ("Text files", "*.txt"),
+                    ("All files", "*.*"),
+                ),
+            )
+            if selected_path:
+                file_var.set(selected_path)
+                file_status_var.set(f"Selected: {os.path.basename(selected_path)}")
+
+        tk.Button(
+            file_path_frame,
+            text="Browse...",
+            command=_browse_macro_file,
+        ).pack(side=tk.RIGHT, padx=(5, 0))
+        tk.Label(
+            file_frame,
+            textvariable=file_status_var,
+            anchor="w",
+            justify=tk.LEFT,
+        ).pack(fill=tk.X)
 
         # Macro library selection ----------------------------------------------
         library_frame = tk.Frame(content_frame)
@@ -1197,6 +1286,7 @@ class FijiProcessorGUI:
 
         mode_frames = {
             "code": code_frame,
+            "file": file_frame,
             "library": library_frame,
         }
 
@@ -1206,8 +1296,17 @@ class FijiProcessorGUI:
         def _apply() -> None:
             previous_mode = self.macro_mode_var.get()
             previous_library = self.macro_library_var.get().strip()
-            self.macro_mode_var.set(mode_var.get())
+            selected_mode = mode_var.get()
+            if selected_mode == "file":
+                try:
+                    _read_macro_file(file_var.get())
+                except ValueError as exc:
+                    messagebox.showerror("Macro file", str(exc), parent=window)
+                    return
+
+            self.macro_mode_var.set(selected_mode)
             self.macro_code_value = code_text.get("1.0", tk.END).strip()
+            self.macro_file_var.set(file_var.get().strip())
             selected_library = ""
             if library_names:
                 selected_library = library_var.get().strip()
@@ -1241,6 +1340,10 @@ class FijiProcessorGUI:
             length = len(self.macro_code_value.strip())
             summary = f"{length} character(s)" if length else "(none)"
             text = f"Macro code: {summary}"
+        elif mode == "file":
+            path = self.macro_file_var.get().strip()
+            summary = os.path.basename(path) if path else "(none selected)"
+            text = f"Macro file: {summary}"
         else:
             name = self.macro_library_var.get().strip()
             summary = name or "(none selected)"
@@ -2123,7 +2226,7 @@ class FijiProcessorGUI:
         if not macro_input:
             messagebox.showerror(
                 "Macro configuration",
-                "Paste complete Fiji macro code or select a library macro.",
+                "Paste complete Fiji macro code, choose a macro file, or select a library macro.",
             )
             return
 
@@ -2475,6 +2578,8 @@ class FijiProcessorGUI:
         if mode == "code":
             value = self.macro_code_value.strip()
             return value or None
+        if mode == "file":
+            return _read_macro_file(self.macro_file_var.get())
         if mode == "library":
             name = self.macro_library_var.get().strip()
             if not name:
